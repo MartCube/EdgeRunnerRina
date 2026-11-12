@@ -1,0 +1,10 @@
+node_modules
+.nuxt
+.output
+.data
+.nitro
+.cache
+dist
+demo/dist
+.env
+.DS_Store
