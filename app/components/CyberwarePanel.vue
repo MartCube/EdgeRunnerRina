@@ -48,7 +48,7 @@ const active = ref(0)
         <h3>{{ PARTS[active]!.name }}</h3>
         <ul><li v-for="line in PARTS[active]!.spec" :key="line">{{ line }}</li></ul>
         <p class="ware__story">{{ PARTS[active]!.story }}</p>
-        <p class="tag">Placeholder: sheet art. The arm, knee and eye become code-built 3D parts that open into exploded views.</p>
+        <p class="tag">Placeholder: sheet art. Blender close-ups of each part can go here.</p>
       </div>
     </article>
   </div>

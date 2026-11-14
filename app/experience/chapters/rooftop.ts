@@ -22,13 +22,19 @@ const TALL = 9.4
 
 /**
  * Chapter 3, Rina: the rooftop where she waits.
- * PLACEHOLDER: she is her 2D art on a flat card until the Tripo model exists. The scan
+ * PLACEHOLDER: she is her 2D art on a flat card until the Blender model exists. The scan
  * sweep (hologram first, then printed solid) is written against the card's UVs and will
- * move to the model's world height when the GLB replaces it.
+ * move to the model's world height when the GLB replaces it (slot "rina" in props.ts).
  */
 export class RooftopChapter {
   readonly group = new Group()
   readonly focus = new Vector3(ROOF.x, ROOF.y + TALL * 0.52, ROOF.z + 18)
+  /** Placeholder roof furniture, and where a Blender rooftop set goes instead. */
+  readonly furniture = new Group()
+  readonly setHolder = new Group()
+  /** Where Rina's model stands; the card is her placeholder. */
+  readonly figureHolder = new Group()
+  readonly card: Mesh
   private readonly figure: ShaderMaterial
   private readonly beacon: MeshBasicMaterial
   private readonly frame: MeshBasicMaterial
@@ -37,7 +43,7 @@ export class RooftopChapter {
     const top = ROOF.y
     const flat = (hex: number, gain = 1) => new MeshBasicMaterial({ color: col(hex, gain) })
 
-    // Roof furniture, all simple blocks. These are the shapes a Tripo rooftop set could replace.
+    // Roof furniture, all simple blocks. A Blender rooftop set replaces them (slot "rooftop-set").
     const parapet = flat(0x2a2848)
     const half = ROOF.size / 2
     for (const [x, z, w, d] of [
@@ -48,7 +54,7 @@ export class RooftopChapter {
     ] as const) {
       const wall = new Mesh(new BoxGeometry(w, 1.6, d), parapet)
       wall.position.set(ROOF.x + x, top + 0.8, ROOF.z + z)
-      this.group.add(wall)
+      this.furniture.add(wall)
     }
     const unit = flat(0x34325a)
     for (const [x, z, s] of [
@@ -60,14 +66,14 @@ export class RooftopChapter {
       ac.position.set(ROOF.x + x, top + 1.5 * s, ROOF.z + z)
       const vent = new Mesh(new CylinderGeometry(1 * s, 1 * s, 0.3, 14), flat(0x14141f))
       vent.position.set(ROOF.x + x, top + 3 * s + 0.15, ROOF.z + z)
-      this.group.add(ac, vent)
+      this.furniture.add(ac, vent)
     }
     const mast = new Mesh(new CylinderGeometry(0.16, 0.22, 20, 8), flat(0x3a3860))
     mast.position.set(ROOF.x + 17, top + 10, ROOF.z + 8)
     this.beacon = new MeshBasicMaterial({ color: col(HEX.pink, 2) })
     const lamp = new Mesh(new BoxGeometry(0.7, 0.7, 0.7), this.beacon)
     lamp.position.set(ROOF.x + 17, top + 20.3, ROOF.z + 8)
-    this.group.add(mast, lamp)
+    this.furniture.add(mast, lamp)
 
     // The neon frame behind her.
     this.frame = new MeshBasicMaterial({ color: col(HEX.pink, 1.7) })
@@ -89,12 +95,17 @@ export class RooftopChapter {
     label.position.set(0, 4.3, 0.05)
     sign.add(label)
     sign.position.set(ROOF.x + 2.5, top + 9.4, ROOF.z + 11)
-    this.group.add(sign)
+    this.furniture.add(sign)
     for (const x of [-4, 9]) {
       const post = new Mesh(new BoxGeometry(0.35, 3.4, 0.35), flat(0x1a1a28))
       post.position.set(ROOF.x + x, top + 1.7, ROOF.z + 11)
-      this.group.add(post)
+      this.furniture.add(post)
     }
+
+    this.group.add(this.furniture)
+    this.setHolder.position.set(ROOF.x, top, ROOF.z)
+    this.figureHolder.position.set(ROOF.x, top, ROOF.z + 18)
+    this.group.add(this.setHolder, this.figureHolder)
 
     // Rina.
     const map = new TextureLoader().load('img/rina-pose.webp', onLoad, undefined, onLoad)
@@ -119,7 +130,7 @@ export class RooftopChapter {
           float rows = 0.6 + 0.4 * step(0.5, fract(vUv.y * 150.0 - uTime * 1.4));
           float jitter = step(0.96, fract(sin(floor(vUv.y * 60.0) * 91.7 + floor(uTime * 12.0)) * 4375.5));
           vec3 holo = uCyan * (0.25 + luma * 1.5) * rows + uPink * jitter * 0.6;
-          vec3 c = mix(holo, t.rgb * 1.05, printed);
+          vec3 c = mix(holo, t.rgb * 1.7, printed);
           float band = smoothstep(0.03, 0.0, abs(vUv.y - line));
           c += (uCyan + 0.4) * band * 2.2;
           float alpha = mix(0.82 * rows + band, 1.0, printed);
@@ -127,9 +138,9 @@ export class RooftopChapter {
         }
       `,
     })
-    const card = new Mesh(new PlaneGeometry(TALL * (526 / 1024), TALL), this.figure)
-    card.position.set(ROOF.x, top + TALL / 2 - 0.05, ROOF.z + 18)
-    this.group.add(card)
+    this.card = new Mesh(new PlaneGeometry(TALL * (526 / 1024), TALL), this.figure)
+    this.card.position.set(ROOF.x, top + TALL / 2 - 0.05, ROOF.z + 18)
+    this.group.add(this.card)
   }
 
   pose(p: number, ware: number, camera: PerspectiveCamera, target: Vector3, f: Frame) {

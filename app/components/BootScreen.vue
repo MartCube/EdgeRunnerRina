@@ -7,7 +7,7 @@ defineEmits<{ enter: [withSound: boolean] }>()
 const LINES = [
   'MANDA EXPRESS COURIER OS 3.7',
   'LEFT OPTIC ............ ONLINE',
-  'APERTURE .............. CALIBRATED',
+  'WEATHER ............... RAIN, 9 C',
   'RIGHT ARM / KNEES ..... OK',
   'ROUTE ................. DISTRICT 7 > ROOFTOP',
   'PARCEL RM-0037 ........ ASSIGNED TO: YOU',
