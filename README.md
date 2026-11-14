@@ -25,3 +25,9 @@ npm run generate   # static site in .output/public (what Netlify builds)
 Placeholders are marked `PLACEHOLDER` in the code and with dashed gold tags on the page. Add `?lite=1` or `?lite=0` to the address to force the light or full renderer.
 
 `npm run demo` builds the same site as a single HTML file in `demo/dist`, for sharing a preview without a deploy.
+
+## For the final site
+
+- **The city must read as more cyberpunk and more futuristic** than this demo (Martin, 14 Nov 2026). The demo city is a base layer. Ideas to get there: megastructures and stacked street levels instead of plain towers, flying traffic in dense lanes, giant holograms, more vertical clutter (pipes, walkways, cables, ads on every surface), and Blender-made hero buildings and props in the model slots.
+- The eye intro is set aside for now (`app/experience/parked/eye.ts`).
+- Rina and the props are modelled in Blender and exported as GLB, not made in Tripo.
