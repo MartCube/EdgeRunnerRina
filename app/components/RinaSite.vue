@@ -66,7 +66,9 @@ function scrambleTo(text: string) {
 }
 watch(stage, (s) => {
   scrambleTo(LABELS[s].toUpperCase())
-  if (exp) exp.hoverable = s === 'landed'
+  if (!exp) return
+  exp.hoverable = s === 'landed'
+  exp.steady(s === 'linked')
 })
 
 async function enter(withSound: boolean) {
@@ -115,6 +117,7 @@ function replay() {
   if (!exp || !flight) return
   closeFile()
   exp.interactive = false
+  exp.dissolve()
   gsap.to(exp.view, { orbit: 0, duration: 0.3 })
   hover.value = false
   stage.value = 'flight'
@@ -149,6 +152,7 @@ function focus(part: Part | null) {
     gsap.to(v, { zoom: 0, duration: 0.8, ease: 'power2.inOut' })
     return
   }
+  exp.settle()
   gsap.to(v, { zoom: 1, partY: part.y, partX: part.x, partDist: part.dist, orbit: 0, duration: 0.9, ease: 'power2.inOut' })
 }
 
