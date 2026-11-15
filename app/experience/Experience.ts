@@ -14,14 +14,13 @@ import {
   BlendFunction,
 } from 'postprocessing'
 import { AudioEngine } from './audio'
-import { CityChapter, ROOF } from './chapters/city'
+import { CityChapter } from './chapters/city'
 import { FOG } from './chapters/city/glsl'
-import { ParcelChapter } from './chapters/parcel'
 import { RooftopChapter, TALL } from './chapters/rooftop'
-import { HEX, clamp01, smooth } from './palette'
+import { HEX, smooth } from './palette'
 import { Props } from './props'
 import { Rina } from './rina'
-import type { Frame, Progress } from './types'
+import type { Frame, Progress, RinaView } from './types'
 
 export interface ExperienceOptions {
   canvas: HTMLCanvasElement
@@ -29,6 +28,10 @@ export interface ExperienceOptions {
   root: HTMLElement
   lite: boolean
   onReady: () => void
+  /** The pointer moved onto or off Rina. */
+  onHover: (over: boolean) => void
+  /** Rina was clicked or tapped. */
+  onPick: () => void
 }
 
 /**
@@ -41,7 +44,13 @@ export interface ExperienceOptions {
  */
 export class Experience {
   readonly audio = new AudioEngine('audio/d-minor-drive.mp3')
-  readonly progress: Progress = { run: 0, rina: 0, ware: 0, delivered: 0 }
+  readonly progress: Progress = { run: 0, rina: 0 }
+  /** The camera around Rina; the page tweens it. */
+  readonly view: RinaView = { link: 0, orbit: 0, zoom: 0, partY: 0.52, partX: 0, partDist: 6 }
+  /** Set by the page once the camera has landed: only then does she react to the pointer. */
+  interactive = false
+  /** Whether the hover outline may show; the page turns it off while her file is open. */
+  hoverable = true
 
   private readonly renderer: WebGLRenderer
   private readonly composer: EffectComposer
@@ -49,12 +58,16 @@ export class Experience {
   private readonly camera = new PerspectiveCamera(55, 1, 0.3, 4000)
   private readonly city = new CityChapter()
   private readonly roof: RooftopChapter
-  private readonly parcel = new ParcelChapter()
   private readonly props = new Props()
   private readonly rina = new Rina()
   private readonly raycaster = new Raycaster()
   private readonly ndc = new Vector2()
   private pointerSeen = false
+  private over = false
+  private drag: { x: number; orbit: number; moved: boolean } | null = null
+  private readonly canvas: HTMLCanvasElement
+  private readonly opts: ExperienceOptions
+  private readonly probe = new Vector3()
   private readonly bloom: BloomEffect
   private readonly target = new Vector3()
   private readonly lookAt = new Vector3()
@@ -72,6 +85,8 @@ export class Experience {
 
   constructor(opts: ExperienceOptions) {
     this.root = opts.root
+    this.canvas = opts.canvas
+    this.opts = opts
     this.lite = opts.lite
     this.frame = {
       time: 0, dt: 0.016, pointer: { x: 0, y: 0 }, beat: 0, beatIndex: 0, level: 0, lite: opts.lite, progress: this.progress,
@@ -82,7 +97,7 @@ export class Experience {
 
     this.roof = new RooftopChapter(opts.onReady)
     this.city.group.add(this.roof.group)
-    this.scene.add(this.city.group, this.parcel.group)
+    this.scene.add(this.city.group)
     // Signs and other plain materials fade into the same fog the city shaders use.
     this.scene.fog = new FogExp2(FOG, 0.0017)
 
@@ -102,11 +117,10 @@ export class Experience {
     void this.props.init().then(() => {
       void this.props.load('rina').then((gltf) => {
         if (!gltf) return
-        this.rina.attach(gltf, this.roof.figureHolder, this.city.group, TALL)
+        this.rina.attach(gltf, this.roof.figureHolder, TALL)
         this.roof.card.visible = false
       })
       this.props.fill('rooftop-set', this.roof.setHolder, 14, this.roof.furniture)
-      this.props.fill('parcel', this.parcel.holder, 2.2, this.parcel.box)
       // Six spots on the pavement, in the stretch the camera flies at street level.
       for (let i = 0; i < 6; i++) {
         const spot = new Group()
@@ -124,7 +138,9 @@ export class Experience {
     this.setLite(opts.lite)
     addEventListener('resize', this.resize)
     addEventListener('pointermove', this.onPointer, { passive: true })
-    addEventListener('pointerdown', this.onTap, { passive: true })
+    opts.canvas.addEventListener('pointerdown', this.onDown)
+    addEventListener('pointerup', this.onUp, { passive: true })
+    addEventListener('pointercancel', this.onUp, { passive: true })
     this.raf = requestAnimationFrame(this.tick)
   }
 
@@ -174,6 +190,12 @@ export class Experience {
     this.pointerRaw.x = (e.clientX / innerWidth) * 2 - 1
     this.pointerRaw.y = -((e.clientY / innerHeight) * 2 - 1)
     this.pointerSeen = e.pointerType === 'mouse' || e.pointerType === 'pen'
+    // Dragging on the scene turns the camera around her, a little way to each side.
+    if (this.drag) {
+      const dx = e.clientX - this.drag.x
+      if (Math.abs(dx) > 6) this.drag.moved = true
+      if (this.drag.moved) this.view.orbit = Math.max(-0.9, Math.min(0.9, this.drag.orbit - dx * 0.006))
+    }
   }
 
   private tick = (now: number) => {
@@ -195,7 +217,6 @@ export class Experience {
 
     const p = this.progress
     let roll = 0
-    this.parcel.group.visible = p.delivered > 0.02
 
     if (p.run < 1) {
       roll = this.city.pose(p.run, this.camera, this.target)
@@ -203,21 +224,11 @@ export class Experience {
       this.camera.position.x += f.pointer.x * 1.6
       this.camera.position.y += f.pointer.y * 1.0
     } else {
-      this.roof.pose(p.rina, p.ware, this.camera, this.target, f)
+      this.roof.pose(p.rina, this.view, this.camera, this.target, f)
     }
     this.wantPos.copy(this.camera.position)
-    if (p.delivered > 0) {
-      // Blend from the roof up to the parcel as the receipt scrolls in.
-      const k = smooth(0, 1, p.delivered)
-      const fromPos = this.wantPos.clone()
-      const fromTarget = this.target.clone()
-      this.parcel.pose(this.camera, this.target)
-      this.wantPos.lerpVectors(fromPos, this.camera.position, k)
-      this.target.lerpVectors(fromTarget, this.target, k)
-    }
     this.city.update(f)
     this.roof.update(p.rina, f)
-    this.parcel.update(f)
     this.props.update(f.dt)
     this.updateRina(f.dt, f.time)
 
@@ -239,44 +250,74 @@ export class Experience {
     // Values the HUD and the page animate from.
     const s = this.root.style
     s.setProperty('--beat', f.beat.toFixed(3))
-    s.setProperty('--scrim', (clamp01(p.ware) * 0.8 - smooth(0.3, 1, p.delivered) * 0.5).toFixed(3))
 
     this.composer.render(f.dt)
   }
 
-  /** On touch screens there is no hover, so a tap on her plays the heart pose. */
-  private onTap = (e: PointerEvent) => {
-    if (e.pointerType !== 'touch' || !this.rina.ready || this.progress.run < 1 || this.progress.ware >= 0.5) return
-    const x = (e.clientX / innerWidth) * 2 - 1
-    const y = -((e.clientY / innerHeight) * 2 - 1)
-    this.camera.updateMatrixWorld()
-    this.raycaster.setFromCamera(this.ndc.set(x, y), this.camera)
-    this.rina.pointer(this.raycaster.ray)
-    this.rina.pointer(null)
+  /** Plays her heart pose, as a click on her does. */
+  heart() {
+    this.rina.heart()
   }
 
-  /** Rina's animations, and her heart pose when the pointer is over her on the roof. */
+  private rayAt(clientX: number, clientY: number) {
+    this.camera.updateMatrixWorld()
+    this.raycaster.setFromCamera(this.ndc.set((clientX / innerWidth) * 2 - 1, -((clientY / innerHeight) * 2 - 1)), this.camera)
+    return this.raycaster.ray
+  }
+
+  private onDown = (e: PointerEvent) => {
+    if (!this.interactive) return
+    this.drag = { x: e.clientX, orbit: this.view.orbit, moved: false }
+  }
+
+  /** A press that did not turn into a drag is a click: on her, it is the pick. */
+  private onUp = (e: PointerEvent) => {
+    const drag = this.drag
+    this.drag = null
+    if (!drag || drag.moved || !this.interactive) return
+    if (this.rina.hit(this.rayAt(e.clientX, e.clientY))) {
+      this.rina.heart()
+      this.opts.onPick()
+    }
+  }
+
+  /** Rina's animations, her hover outline, and where the HUD around her goes on screen. */
   private updateRina(dt: number, time: number) {
     const p = this.progress
-    const onRoof = p.run > 0.85 && p.delivered < 1
-    this.rina.update(dt, time, smooth(0.06, 0.55, p.rina), ROOF.y, onRoof, p.run, this.camera.position)
+    this.rina.update(dt, time, smooth(0.06, 0.55, p.rina), p.run > 0.85)
     if (!this.rina.ready) return
-    let ray = null
-    if (this.pointerSeen && p.run >= 1 && p.ware < 0.5) {
-      this.camera.updateMatrixWorld()
-      this.raycaster.setFromCamera(this.ndc.set(this.pointerRaw.x, this.pointerRaw.y), this.camera)
-      ray = this.raycaster.ray
+
+    const over = this.interactive && this.hoverable && this.pointerSeen && !this.drag?.moved
+      && this.rina.hit(this.rayAt((this.pointerRaw.x + 1) * 0.5 * innerWidth, (1 - this.pointerRaw.y) * 0.5 * innerHeight))
+    if (over !== this.over) {
+      this.over = over
+      this.rina.hover(over)
+      this.canvas.style.cursor = over ? 'pointer' : ''
+      this.opts.onHover(over)
     }
-    const over = this.rina.pointer(ray)
-    document.documentElement.style.cursor = over ? 'pointer' : ''
+
+    // Her head and feet in screen pixels, for the brackets and label the page draws around her.
+    if (this.interactive) {
+      const s = this.root.style
+      const feet = this.probe.copy(this.rina.feet).project(this.camera)
+      const x = (feet.x + 1) * 0.5 * innerWidth
+      const bottom = (1 - feet.y) * 0.5 * innerHeight
+      const head = this.probe.copy(this.rina.feet)
+      head.y += this.rina.height
+      head.project(this.camera)
+      s.setProperty('--rina-x', `${x.toFixed(1)}px`)
+      s.setProperty('--rina-top', `${((1 - head.y) * 0.5 * innerHeight).toFixed(1)}px`)
+      s.setProperty('--rina-bottom', `${bottom.toFixed(1)}px`)
+    }
   }
 
   dispose() {
     cancelAnimationFrame(this.raf)
     removeEventListener('resize', this.resize)
     removeEventListener('pointermove', this.onPointer)
-    removeEventListener('pointerdown', this.onTap)
-    document.documentElement.style.cursor = ''
+    this.canvas.removeEventListener('pointerdown', this.onDown)
+    removeEventListener('pointerup', this.onUp)
+    removeEventListener('pointercancel', this.onUp)
     this.audio.dispose()
     this.composer.dispose()
     this.renderer.dispose()

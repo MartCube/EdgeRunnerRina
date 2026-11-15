@@ -10,7 +10,7 @@ const LINES = [
   'WEATHER ............... RAIN, 9 C',
   'RIGHT ARM / KNEES ..... OK',
   'ROUTE ................. DISTRICT 7 > ROOFTOP',
-  'PARCEL RM-0037 ........ ASSIGNED TO: YOU',
+  'SIGNAL ................ RM-01 FOUND',
 ]
 const shown = ref(0)
 let timer = 0

@@ -4,15 +4,13 @@ Drop GLB files here and list them in `manifest.json`. A slot with no entry keeps
 
 ```json
 {
-  "rina": "rina.glb",
-  "parcel": "parcel.glb"
+  "rina": "rina.glb"
 }
 ```
 
 | Slot id | What it replaces | Notes |
 | --- | --- | --- |
-| `rina` | Her 2D art on the rooftop, and the runner in the city | In use: `rina.glb`, made from `source-models/rina.glb` by `tools/rina-model`. Needs the clips `wait`, `look_around`, `heart_pose` and `run` (see `app/experience/rina.ts`). |
-| `parcel` | The parcel in the last chapter | About as wide as it is tall. It spins slowly, so model all sides. |
+| `rina` | Her 2D art on the rooftop | In use: `rina.glb`, made from `source-models/rina.glb` by `tools/rina-model`. Needs the clips `wait`, `look_around` and `heart_pose` (see `app/experience/rina.ts`). |
 | `rooftop-set` | AC units, mast and sign frame on her roof | One object group, about 40 m wide. Leave the middle clear for her. |
 | `street-prop` | Nothing yet; placed at six spots on the pavement | A vending machine, stall or terminal. |
 
