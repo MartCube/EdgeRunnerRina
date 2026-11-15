@@ -17,7 +17,7 @@ import { AudioEngine } from './audio'
 import { CityChapter } from './chapters/city'
 import { FOG } from './chapters/city/glsl'
 import { RooftopChapter, TALL } from './chapters/rooftop'
-import { HEX, smooth } from './palette'
+import { HEX } from './palette'
 import { Props } from './props'
 import { Rina } from './rina'
 import type { Frame, Progress, RinaView } from './types'
@@ -119,6 +119,12 @@ export class Experience {
         if (!gltf) return
         this.rina.attach(gltf, this.roof.figureHolder, TALL)
         this.roof.card.visible = false
+        // The light model is on screen at once. On a full-detail visit the high-detail one
+        // loads behind it during the flight and takes over when it is ready.
+        if (this.lite) return
+        void this.props.load('rina-hd').then((hd) => {
+          if (hd) this.rina.attach(hd, this.roof.figureHolder, TALL)
+        })
       })
       this.props.fill('rooftop-set', this.roof.setHolder, 14, this.roof.furniture)
       // Six spots on the pavement, in the stretch the camera flies at street level.
@@ -259,6 +265,21 @@ export class Experience {
     this.rina.heart()
   }
 
+  /** Holds her in her standing pose (while her file is open) or lets her look around again. */
+  steady(on: boolean) {
+    this.rina.steady = on
+  }
+
+  /** Brings her back to her standing pose now, before the camera moves in on a part. */
+  settle() {
+    this.rina.settle()
+  }
+
+  /** Turns her back into a hologram, for a replay of the flight. */
+  dissolve() {
+    this.rina.dissolve()
+  }
+
   private rayAt(clientX: number, clientY: number) {
     this.camera.updateMatrixWorld()
     this.raycaster.setFromCamera(this.ndc.set((clientX / innerWidth) * 2 - 1, -((clientY / innerHeight) * 2 - 1)), this.camera)
@@ -284,7 +305,7 @@ export class Experience {
   /** Rina's animations, her hover outline, and where the HUD around her goes on screen. */
   private updateRina(dt: number, time: number) {
     const p = this.progress
-    this.rina.update(dt, time, smooth(0.06, 0.55, p.rina), p.run > 0.85)
+    this.rina.update(dt, time, p.run > 0.85)
     if (!this.rina.ready) return
 
     const over = this.interactive && this.hoverable && this.pointerSeen && !this.drag?.moved
