@@ -1,4 +1,4 @@
-import { Color, DirectionalLight, FogExp2, Group, HalfFloatType, HemisphereLight, PerspectiveCamera, PMREMGenerator, Scene, Vector2, Vector3, WebGLRenderer } from 'three'
+import { Color, DirectionalLight, FogExp2, Group, HalfFloatType, HemisphereLight, PerspectiveCamera, PMREMGenerator, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   BloomEffect,
@@ -14,12 +14,13 @@ import {
   BlendFunction,
 } from 'postprocessing'
 import { AudioEngine } from './audio'
-import { CityChapter } from './chapters/city'
+import { CityChapter, ROOF } from './chapters/city'
 import { FOG } from './chapters/city/glsl'
 import { ParcelChapter } from './chapters/parcel'
-import { RooftopChapter } from './chapters/rooftop'
+import { RooftopChapter, TALL } from './chapters/rooftop'
 import { HEX, clamp01, smooth } from './palette'
 import { Props } from './props'
+import { Rina } from './rina'
 import type { Frame, Progress } from './types'
 
 export interface ExperienceOptions {
@@ -50,6 +51,10 @@ export class Experience {
   private readonly roof: RooftopChapter
   private readonly parcel = new ParcelChapter()
   private readonly props = new Props()
+  private readonly rina = new Rina()
+  private readonly raycaster = new Raycaster()
+  private readonly ndc = new Vector2()
+  private pointerSeen = false
   private readonly bloom: BloomEffect
   private readonly target = new Vector3()
   private readonly lookAt = new Vector3()
@@ -95,7 +100,11 @@ export class Experience {
     this.scene.add(new HemisphereLight(0x8fa8ff, 0x2a1030, 0.25), pinkKey, cyanKey)
 
     void this.props.init().then(() => {
-      this.props.fill('rina', this.roof.figureHolder, 9.4, this.roof.card)
+      void this.props.load('rina').then((gltf) => {
+        if (!gltf) return
+        this.rina.attach(gltf, this.roof.figureHolder, this.city.group, TALL)
+        this.roof.card.visible = false
+      })
       this.props.fill('rooftop-set', this.roof.setHolder, 14, this.roof.furniture)
       this.props.fill('parcel', this.parcel.holder, 2.2, this.parcel.box)
       // Six spots on the pavement, in the stretch the camera flies at street level.
@@ -115,6 +124,7 @@ export class Experience {
     this.setLite(opts.lite)
     addEventListener('resize', this.resize)
     addEventListener('pointermove', this.onPointer, { passive: true })
+    addEventListener('pointerdown', this.onTap, { passive: true })
     this.raf = requestAnimationFrame(this.tick)
   }
 
@@ -163,6 +173,7 @@ export class Experience {
   private onPointer = (e: PointerEvent) => {
     this.pointerRaw.x = (e.clientX / innerWidth) * 2 - 1
     this.pointerRaw.y = -((e.clientY / innerHeight) * 2 - 1)
+    this.pointerSeen = e.pointerType === 'mouse' || e.pointerType === 'pen'
   }
 
   private tick = (now: number) => {
@@ -208,6 +219,7 @@ export class Experience {
     this.roof.update(p.rina, f)
     this.parcel.update(f)
     this.props.update(f.dt)
+    this.updateRina(f.dt, f.time)
 
     if (this.first || this.reduced) {
       this.first = false
@@ -232,10 +244,39 @@ export class Experience {
     this.composer.render(f.dt)
   }
 
+  /** On touch screens there is no hover, so a tap on her plays the heart pose. */
+  private onTap = (e: PointerEvent) => {
+    if (e.pointerType !== 'touch' || !this.rina.ready || this.progress.run < 1 || this.progress.ware >= 0.5) return
+    const x = (e.clientX / innerWidth) * 2 - 1
+    const y = -((e.clientY / innerHeight) * 2 - 1)
+    this.camera.updateMatrixWorld()
+    this.raycaster.setFromCamera(this.ndc.set(x, y), this.camera)
+    this.rina.pointer(this.raycaster.ray)
+    this.rina.pointer(null)
+  }
+
+  /** Rina's animations, and her heart pose when the pointer is over her on the roof. */
+  private updateRina(dt: number, time: number) {
+    const p = this.progress
+    const onRoof = p.run > 0.85 && p.delivered < 1
+    this.rina.update(dt, time, smooth(0.06, 0.55, p.rina), ROOF.y, onRoof, p.run, this.camera.position)
+    if (!this.rina.ready) return
+    let ray = null
+    if (this.pointerSeen && p.run >= 1 && p.ware < 0.5) {
+      this.camera.updateMatrixWorld()
+      this.raycaster.setFromCamera(this.ndc.set(this.pointerRaw.x, this.pointerRaw.y), this.camera)
+      ray = this.raycaster.ray
+    }
+    const over = this.rina.pointer(ray)
+    document.documentElement.style.cursor = over ? 'pointer' : ''
+  }
+
   dispose() {
     cancelAnimationFrame(this.raf)
     removeEventListener('resize', this.resize)
     removeEventListener('pointermove', this.onPointer)
+    removeEventListener('pointerdown', this.onTap)
+    document.documentElement.style.cursor = ''
     this.audio.dispose()
     this.composer.dispose()
     this.renderer.dispose()

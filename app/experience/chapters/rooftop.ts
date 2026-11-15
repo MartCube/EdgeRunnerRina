@@ -18,13 +18,12 @@ import type { Frame } from '../types'
 import { ROOF } from './city'
 
 /** Height of the figure in scene units. */
-const TALL = 9.4
+export const TALL = 9.4
 
 /**
  * Chapter 3, Rina: the rooftop where she waits.
- * PLACEHOLDER: she is her 2D art on a flat card until the Blender model exists. The scan
- * sweep (hologram first, then printed solid) is written against the card's UVs and will
- * move to the model's world height when the GLB replaces it (slot "rina" in props.ts).
+ * She is her rigged model (see rina.ts), which also runs the scan sweep. The 2D card below
+ * is the fallback while the model loads, or if public/models/rina.glb is missing.
  */
 export class RooftopChapter {
   readonly group = new Group()

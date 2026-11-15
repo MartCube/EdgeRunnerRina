@@ -235,7 +235,7 @@ onBeforeUnmount(() => {
               <div><dt>Chrome</dt><dd>Right arm, both knees</dd></div>
               <div><dt>Marks</dt><dd>Sakura circuit tattoo, hip barcode, three scars</dd></div>
             </dl>
-            <p class="tag">Placeholder: her 2D art on a card. The Blender model takes this spot.</p>
+            <p class="mono hint">Point at her. Tap on a phone.</p>
           </div>
         </div>
       </section>
