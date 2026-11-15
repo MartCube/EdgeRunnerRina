@@ -1,6 +1,5 @@
 /** Scroll progress of each chapter, 0 to 1, written by the page and read by the scenes. */
 export interface Progress {
-  optic: number
   run: number
   rina: number
   /** How far the cyberware panel has scrolled in. */
@@ -24,5 +23,5 @@ export interface Frame {
   progress: Progress
 }
 
-export const CHAPTERS = ['optic', 'run', 'rina', 'ware', 'delivered'] as const
+export const CHAPTERS = ['run', 'rina', 'ware', 'delivered'] as const
 export type ChapterId = (typeof CHAPTERS)[number]

@@ -10,7 +10,6 @@ import CyberwarePanel from './CyberwarePanel.vue'
 import DeliveryReceipt from './DeliveryReceipt.vue'
 
 const WAYPOINTS: Record<ChapterId, string> = {
-  optic: 'Optic',
   run: 'The run',
   rina: 'Rina',
   ware: 'Cyberware',
@@ -25,8 +24,8 @@ const ready = ref(false)
 const failed = ref(false)
 const sound = ref(false)
 const lite = ref(false)
-const chapter = ref<ChapterId>('optic')
-const label = ref('OPTIC')
+const chapter = ref<ChapterId>('run')
+const label = ref('THE RUN')
 const route = ref(0)
 const clock = ref('')
 const signed = ref(false)
@@ -42,7 +41,7 @@ const chapterNumber = computed(() => String(CHAPTERS.indexOf(chapter.value) + 1)
 function sync() {
   if (!exp) return
   const p = exp.progress
-  const next: ChapterId = p.optic < 0.999 ? 'optic' : p.run < 1 ? 'run' : p.ware < 0.5 ? 'rina' : p.delivered < 0.5 ? 'ware' : 'delivered'
+  const next: ChapterId = p.run < 1 ? 'run' : p.ware < 0.5 ? 'rina' : p.delivered < 0.5 ? 'ware' : 'delivered'
   if (next !== chapter.value) chapter.value = next
   const max = document.documentElement.scrollHeight - innerHeight
   route.value = max > 0 ? Math.round((scrollY / max) * 100) : 0
@@ -94,7 +93,7 @@ function goTo(id: ChapterId) {
   const el = sections[id]
   if (!el) return
   // The last two chapters are read at their top edge; the rest start a little way in.
-  const y = el.getBoundingClientRect().top + scrollY + (id === 'optic' || id === 'ware' || id === 'delivered' ? 0 : innerHeight * 0.4)
+  const y = el.getBoundingClientRect().top + scrollY + (id === 'rina' ? innerHeight * 0.4 : 0)
   scrollTo({ top: y, behavior: 'smooth' })
 }
 
@@ -107,6 +106,9 @@ onMounted(() => {
   // Phones and weak machines start in lite mode; the HUD toggle overrides it.
   const nav = navigator as Navigator & { deviceMemory?: number }
   lite.value = matchMedia('(max-width: 760px), (pointer: coarse)').matches || (nav.deviceMemory ?? 8) <= 4
+  // ?lite=1 or ?lite=0 in the address forces a mode, for testing.
+  const forced = new URLSearchParams(location.search).get('lite')
+  if (forced !== null) lite.value = forced !== '0'
 
   try {
     exp = new Experience({ canvas: canvas.value!, root: root.value!, lite: lite.value, onReady: () => (ready.value = true) })
@@ -133,7 +135,6 @@ onMounted(() => {
       }),
     )
   }
-  bind('optic', 'top top', 'bottom top')
   bind('run', 'top top', 'bottom top')
   bind('rina', 'top top', 'bottom top')
   bind('ware', 'top bottom', 'top top')
@@ -161,8 +162,6 @@ onBeforeUnmount(() => {
   <div ref="root" class="site" :class="{ 'is-booted': booted, 'is-lite': lite }">
     <canvas ref="canvas" class="stage" aria-hidden="true" />
     <div class="scrim" aria-hidden="true" />
-    <div class="lid lid--top" aria-hidden="true" />
-    <div class="lid lid--bottom" aria-hidden="true" />
     <div class="scanlines" aria-hidden="true" />
 
     <BootScreen v-if="!booted" :ready="ready" :failed="failed" @enter="enter" />
@@ -171,7 +170,7 @@ onBeforeUnmount(() => {
     <header class="hud hud--top">
       <div class="hud__id">
         <strong>MANDA EXPRESS</strong>
-        <span>OPTIC FEED / UNIT RM-01</span>
+        <span>DISTRICT 7 / UNIT RM-01</span>
       </div>
       <div class="hud__tools">
         <span class="hud__stat"><i class="beat" />{{ BPM }} BPM</span>
@@ -200,40 +199,25 @@ onBeforeUnmount(() => {
     </footer>
 
     <main>
-      <section :ref="(el) => (sections.optic = el as HTMLElement)" class="chapter chapter--optic">
-        <div class="pin">
-          <div class="reticle" data-ch="optic" data-from="0.03" data-to="0.62" aria-hidden="true">
-            <i /><i /><i /><i />
-            <span>TARGET ACQUIRED</span>
-            <span>{{ clock }} LOCAL</span>
-          </div>
-          <div class="caption caption--hero" data-ch="optic" data-from="0" data-to="0.3">
-            <p class="mono">OPTIC SYSTEM ONLINE / APERTURE CALIBRATED</p>
-            <h1>Rina Manda</h1>
-            <p class="lede">Cyborg street courier. One delivery left tonight, and you are looking through the eye that is carrying it.</p>
-            <p class="mono hint">Scroll to pull back through the lens</p>
-          </div>
-          <div class="caption caption--low" data-ch="optic" data-from="0.4" data-to="0.82">
-            <p class="mono">LEFT OPTIC / TITANIUM IRIS / GOLD BEZEL</p>
-            <h2>The eye is built in code</h2>
-            <p>Every ring, blade and piston is a separate part. It follows your cursor and ticks on the beat.</p>
-          </div>
-        </div>
-      </section>
-
       <section :ref="(el) => (sections.run = el as HTMLElement)" class="chapter chapter--run">
         <div class="pin">
-          <div class="caption caption--left" data-ch="run" data-from="0.05" data-to="0.3">
-            <p class="mono">PICKUP CONFIRMED / DISTRICT 7 / RAIN</p>
+          <div class="caption caption--hero" data-ch="run" data-from="0" data-to="0.1">
+            <p class="mono">MANDA EXPRESS / DISTRICT 7 / 02:14</p>
+            <h1>Rina Manda</h1>
+            <p class="lede">Cyborg street courier. One delivery left tonight, and it has your name on it.</p>
+            <p class="mono hint">Scroll to start the run</p>
+          </div>
+          <div class="caption caption--left" data-ch="run" data-from="0.15" data-to="0.33">
+            <p class="mono">PICKUP CONFIRMED / RAIN / 2.4 KM TO DROP</p>
             <h2>The run</h2>
-            <p>2.4 km to the drop. She takes the roofs, you take the street.</p>
+            <p>She takes the roofs. You take the street.</p>
           </div>
-          <div class="caption caption--right" data-ch="run" data-from="0.4" data-to="0.66">
+          <div class="caption caption--right" data-ch="run" data-from="0.44" data-to="0.64">
             <p class="mono">STREET LEVEL</p>
-            <h2>A city made of one box</h2>
-            <p>Towers, windows, signs and rain are generated, so there is nothing to download. The ink lines and halftone are one pass over all of it.</p>
+            <h2>District 7 never closes</h2>
+            <p>Noodle bars, chrome clinics and pawn shops, all of it lit and all of it wet.</p>
           </div>
-          <div class="caption caption--left" data-ch="run" data-from="0.76" data-to="0.97">
+          <div class="caption caption--left" data-ch="run" data-from="0.78" data-to="0.97">
             <p class="mono">ROOFTOP AHEAD / SIGNAL LOCK</p>
             <h2>She is already there</h2>
           </div>
@@ -251,7 +235,7 @@ onBeforeUnmount(() => {
               <div><dt>Chrome</dt><dd>Right arm, both knees</dd></div>
               <div><dt>Marks</dt><dd>Sakura circuit tattoo, hip barcode, three scars</dd></div>
             </dl>
-            <p class="tag">Placeholder: her 2D art on a card. The rigged 3D model takes this spot.</p>
+            <p class="mono hint">Point at her. Tap on a phone.</p>
           </div>
         </div>
       </section>

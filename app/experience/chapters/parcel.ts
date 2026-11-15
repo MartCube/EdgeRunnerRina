@@ -18,12 +18,15 @@ import type { Frame } from '../types'
 
 /**
  * Chapter 5, Delivered: the courier parcel, built in code.
- * PLACEHOLDER shape. A Tripo-made parcel is a good first prop: hard, boxy and small.
+ * PLACEHOLDER shape. A Blender parcel is a good first prop: hard, boxy and small (slot "parcel").
  */
 export class ParcelChapter {
   readonly group = new Group()
   readonly home = new Vector3(0, 190, -900)
-  private readonly box = new Group()
+  /** The code-built parcel, and the holder a Blender model goes into instead. */
+  readonly box = new Group()
+  readonly holder = new Group()
+  private readonly spin = new Group()
   private readonly led: MeshBasicMaterial
 
   constructor() {
@@ -54,7 +57,9 @@ export class ParcelChapter {
     rim.position.set(-5, -1, -3)
     const fill = new PointLight(HEX.pink, 40, 0, 1.6)
     fill.position.set(4, -4, 3)
-    this.group.add(this.box, key, rim, fill, new AmbientLight(0x50508a, 1.4))
+    this.holder.position.y = -1.1
+    this.spin.add(this.box, this.holder)
+    this.group.add(this.spin, key, rim, fill, new AmbientLight(0x50508a, 1.4))
     this.group.position.copy(this.home)
   }
 
@@ -67,9 +72,9 @@ export class ParcelChapter {
   }
 
   update(f: Frame) {
-    this.box.rotation.y = f.time * 0.35 + f.pointer.x * 0.5
-    this.box.rotation.x = 0.28 + f.pointer.y * -0.2
-    this.box.position.y = Math.sin(f.time * 1.1) * 0.18
+    this.spin.rotation.y = f.time * 0.35 + f.pointer.x * 0.5
+    this.spin.rotation.x = 0.28 + f.pointer.y * -0.2
+    this.spin.position.y = Math.sin(f.time * 1.1) * 0.18
     this.led.color.copy(col(HEX.cyan, 0.8 + f.beat * 2.2))
   }
 }
