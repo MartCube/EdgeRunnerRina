@@ -1,8 +1,7 @@
-import { AnimationMixer, Box3, LoopOnce, LoopRepeat, Mesh, Ray, Vector3 } from 'three'
-import type { AnimationAction, AnimationClip, Group, Material, MeshStandardMaterial, Object3D } from 'three'
+import { AnimationMixer, BackSide, Box3, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, SkinnedMesh, Vector3 } from 'three'
+import type { AnimationAction, AnimationClip, Group, Material, MeshStandardMaterial, Object3D, Ray } from 'three'
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js'
-import { HEX, col, smooth } from './palette'
+import { HEX, col } from './palette'
 import { fit } from './props'
 
 /** Clip names in rina.glb (exported from Tripo with a Mixamo rig). */
@@ -13,60 +12,84 @@ const LOOK_EVERY = [9, 15] as const
 const FADE = 0.45
 
 /**
- * Rina as a rigged model, in two places:
+ * Rina as a rigged model on her rooftop.
  *
- * - On the rooftop she stands in "wait", now and then plays "look_around", and does
- *   "heart_pose" when the visitor's pointer is over her. The scan sweep from the old 2D card
- *   runs over her too: below the line she is still a cyan hologram.
- * - In the city run a second copy runs down the street ahead of the camera.
+ * She stands in "wait" and now and then plays "look_around". While the pointer is over her a
+ * cyan outline traces her, and a click (see Experience) plays "heart_pose". The scan sweep
+ * runs over her as the camera lands: below the line she is still a cyan hologram.
  */
 export class Rina {
-  private roof?: Actor
-  private runner?: Actor
-  private runnerRoot?: Object3D
+  /** World position of her feet, and her height, for placing the HUD around her. */
+  readonly feet = new Vector3()
+  height = 1
+  private actor?: Actor
+  private readonly outlines: SkinnedMesh[] = []
   private readonly scanUniforms = { uLine: { value: 1e4 }, uTime: { value: 0 }, uCyan: { value: col(HEX.cyan) } }
+  private readonly outlineUniforms = { uWidth: { value: 0.05 } }
   private readonly hitBox = new Box3()
-  private hovering = false
   private nextLook = rand(...LOOK_EVERY)
-  private height = 1
+  private glow = 0
+  private hovering = false
 
   /** True once the model is in; until then the 2D card stays. */
   get ready() {
-    return !!this.roof
+    return !!this.actor
   }
 
   /**
-   * @param gltf      The loaded rina.glb.
-   * @param roofHolder Where she stands on the roof (origin at her feet).
-   * @param street    Group for the running copy, in city space.
-   * @param height    Her height in scene units.
+   * @param gltf    The loaded rina.glb.
+   * @param holder  Where she stands on the roof (origin at her feet).
+   * @param height  Her height in scene units.
    */
-  attach(gltf: GLTF, roofHolder: Group, street: Group, height: number) {
+  attach(gltf: GLTF, holder: Group, height: number) {
     this.height = height
-    const clips = gltf.animations
-
-    // The runner is a separate copy with its own skeleton and plain materials.
-    const runnerModel = cloneSkinned(gltf.scene)
-    this.runnerRoot = fit(runnerModel, height)
-    this.runnerRoot.visible = false
-    street.add(this.runnerRoot)
-    this.runner = new Actor(runnerModel, clips)
-    this.runner.play('run', 0)
-
-    // The rooftop copy gets the scan sweep.
+    const skinned: SkinnedMesh[] = []
     gltf.scene.traverse((o) => {
       if (o instanceof Mesh) o.material = this.withScan(o.material as MeshStandardMaterial)
+      if (o instanceof SkinnedMesh) skinned.push(o)
       o.frustumCulled = false
     })
-    roofHolder.add(fit(gltf.scene, height))
-    this.roof = new Actor(gltf.scene, clips)
-    this.roof.play('wait', 0)
-    this.roof.mixer.addEventListener('finished', () => this.roof?.play('wait', FADE))
+    // The hover outline: the same skinned mesh drawn again, pushed out along its normals and
+    // showing only its back faces, so a cyan rim follows her through every pose.
+    const rim = this.outlineMaterial()
+    for (const mesh of skinned) {
+      const shell = new SkinnedMesh(mesh.geometry, rim)
+      shell.bind(mesh.skeleton, mesh.bindMatrix)
+      shell.position.copy(mesh.position)
+      shell.quaternion.copy(mesh.quaternion)
+      shell.scale.copy(mesh.scale)
+      shell.frustumCulled = false
+      shell.visible = false
+      mesh.parent?.add(shell)
+      this.outlines.push(shell)
+    }
+    holder.add(fit(gltf.scene, height))
+    this.actor = new Actor(gltf.scene, gltf.animations)
+    this.actor.play('wait', 0)
+    this.actor.mixer.addEventListener('finished', () => this.actor?.play('wait', FADE))
 
-    roofHolder.updateWorldMatrix(true, false)
-    const feet = new Vector3().setFromMatrixPosition(roofHolder.matrixWorld)
-    this.hitBox.min.set(feet.x - height * 0.22, feet.y, feet.z - height * 0.15)
-    this.hitBox.max.set(feet.x + height * 0.22, feet.y + height, feet.z + height * 0.15)
+    holder.updateWorldMatrix(true, false)
+    this.feet.setFromMatrixPosition(holder.matrixWorld)
+    const f = this.feet
+    this.hitBox.min.set(f.x - height * 0.22, f.y, f.z - height * 0.15)
+    this.hitBox.max.set(f.x + height * 0.22, f.y + height, f.z + height * 0.15)
+  }
+
+  private outlineMaterial(): Material {
+    const mat = new MeshBasicMaterial({ color: col(HEX.cyan, 1.6), side: BackSide, fog: false, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 8 })
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.outlineUniforms)
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uWidth;')
+        .replace(
+          '#include <project_vertex>',
+          `#include <project_vertex>
+          mvPosition.xyz += normalize(normalMatrix * objectNormal) * uWidth;
+          gl_Position = projectionMatrix * mvPosition;`,
+        )
+    }
+    mat.customProgramCacheKey = () => 'rina-outline'
+    return mat
   }
 
   /** Hologram below a world height, printed above it. Same look as the old card's sweep. */
@@ -96,53 +119,46 @@ export class Rina {
 
   /**
    * Called every frame.
-   * @param scan     0 to 1, how far the sweep has gone (head to feet).
-   * @param feetY    World height of her feet on the roof.
-   * @param onRoof   Whether the rooftop chapter is on screen.
-   * @param runP     Progress of the city run, for the runner.
-   * @param camera   Camera position, the runner keeps ahead of it.
+   * @param scan    0 to 1, how far the sweep has gone (head to feet).
+   * @param active  Whether the rooftop is on screen, so her animations should run.
    */
-  update(dt: number, time: number, scan: number, feetY: number, onRoof: boolean, runP: number, camera: Vector3) {
+  update(dt: number, time: number, scan: number, active: boolean) {
     const u = this.scanUniforms
     u.uTime.value = time
-    u.uLine.value = feetY + this.height * (1.04 - scan * 1.1)
+    u.uLine.value = this.feet.y + this.height * (1.04 - scan * 1.1)
 
-    if (this.roof && onRoof) {
-      const r = this.roof
-      if (r.current === 'wait') {
-        this.nextLook -= dt
-        if (this.nextLook <= 0) {
-          r.play('look_around', FADE, true)
-          this.nextLook = rand(...LOOK_EVERY)
-        }
-      }
-      r.mixer.update(dt)
-    }
+    // The outline eases in and out, and breathes a little while it is on.
+    this.glow += ((this.hovering ? 1 : 0) - this.glow) * (1 - Math.exp(-dt * 12))
+    const on = this.glow > 0.02
+    for (const o of this.outlines) o.visible = on
+    this.outlineUniforms.uWidth.value = this.glow * (0.02 + 0.005 * Math.sin(time * 5))
 
-    // The runner shows for the street-level stretch of the run, a little ahead of the camera.
-    if (this.runner && this.runnerRoot) {
-      const show = smooth(0.3, 0.36, runP) * (1 - smooth(0.7, 0.76, runP))
-      this.runnerRoot.visible = show > 0.01
-      if (this.runnerRoot.visible) {
-        this.runnerRoot.position.set(camera.x * 0.5, 0, camera.z - 20 - (1 - show) * 15)
-        this.runnerRoot.rotation.y = Math.PI // run away from the camera, down the street
-        this.runner.mixer.update(dt)
+    const a = this.actor
+    if (!a || !active) return
+    if (a.current === 'wait') {
+      this.nextLook -= dt
+      if (this.nextLook <= 0) {
+        a.play('look_around', FADE, true)
+        this.nextLook = rand(...LOOK_EVERY)
       }
     }
+    a.mixer.update(dt)
   }
 
-  /**
-   * Hover test against a box around her. Starts "heart_pose" when the pointer moves onto her.
-   * @returns whether the pointer is over her.
-   */
-  pointer(ray: Ray | null): boolean {
-    const over = !!ray && !!this.roof && ray.intersectsBox(this.hitBox)
-    if (over && !this.hovering && this.roof && this.roof.current !== 'heart_pose') {
-      this.roof.play('heart_pose', 0.3, true)
-      this.nextLook = rand(...LOOK_EVERY)
-    }
-    this.hovering = over
-    return over
+  /** Whether a ray from the camera passes through her. */
+  hit(ray: Ray): boolean {
+    return this.ready && ray.intersectsBox(this.hitBox)
+  }
+
+  /** Turns the hover outline on or off. */
+  hover(on: boolean) {
+    this.hovering = on
+  }
+
+  /** Plays the heart pose once, then she goes back to waiting. */
+  heart() {
+    this.actor?.play('heart_pose', 0.3, true)
+    this.nextLook = rand(...LOOK_EVERY)
   }
 }
 
