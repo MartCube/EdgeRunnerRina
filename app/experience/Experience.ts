@@ -95,7 +95,13 @@ export class Experience {
     this.renderer = new WebGLRenderer({ canvas: opts.canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false })
     this.renderer.setClearColor(new Color(HEX.void))
 
-    this.roof = new RooftopChapter(opts.onReady)
+    // The boot screen stays up until her art and her model have both loaded (or failed),
+    // so the first thing seen after it is the finished scene, never a half-built one.
+    let pending = 2
+    const loaded = () => {
+      if (--pending === 0) requestAnimationFrame(() => opts.onReady())
+    }
+    this.roof = new RooftopChapter(loaded)
     this.city.group.add(this.roof.group)
     this.scene.add(this.city.group)
     // Signs and other plain materials fade into the same fog the city shaders use.
@@ -116,9 +122,13 @@ export class Experience {
 
     void this.props.init().then(() => {
       void this.props.load('rina').then((gltf) => {
-        if (!gltf) return
-        this.rina.attach(gltf, this.roof.figureHolder, TALL)
-        this.roof.card.visible = false
+        if (!gltf) return loaded()
+        try {
+          this.rina.attach(gltf, this.roof.figureHolder, TALL)
+          this.roof.card.visible = false
+        } finally {
+          loaded()
+        }
         // The light model is on screen at once. On a full-detail visit the high-detail one
         // loads behind it during the flight and takes over when it is ready.
         if (this.lite) return

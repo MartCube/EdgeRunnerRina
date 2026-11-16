@@ -16,9 +16,12 @@ export default defineNuxtConfig({
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+        // Loaded without blocking the first paint; the fallbacks in main.css show until it arrives.
         {
           rel: 'stylesheet',
           href: 'https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=Chakra+Petch:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap',
+          media: 'print',
+          onload: "this.media='all'",
         },
       ],
     },

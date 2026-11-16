@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import gsap from 'gsap'
-import { Experience } from '../experience/Experience'
+import type { Experience } from '../experience/Experience'
 import { BPM } from '../experience/audio'
 import type { Stage } from '../experience/types'
 import BootScreen from './BootScreen.vue'
@@ -169,7 +169,7 @@ const onKey = (e: KeyboardEvent) => {
   if (['ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) startFlight()
 }
 
-onMounted(() => {
+onMounted(async () => {
   // The page itself never scrolls: one scroll gesture starts the flight.
   document.documentElement.classList.add('is-locked')
   const tick = () => (clock.value = new Date().toLocaleTimeString([], { hour12: false }))
@@ -184,7 +184,24 @@ onMounted(() => {
   const forced = new URLSearchParams(location.search).get('lite')
   if (forced !== null) lite.value = forced !== '0'
 
+  captions = [...root.value!.querySelectorAll<HTMLElement>('[data-from]')].map((el) => ({
+    el,
+    from: Number(el.dataset.from),
+    to: Number(el.dataset.to),
+  }))
+  sync()
+
+  addEventListener('wheel', onWheel, { passive: true })
+  addEventListener('touchstart', onTouchStart, { passive: true })
+  addEventListener('touchmove', onTouchMove, { passive: true })
+  addEventListener('keydown', onKey)
+
+  // Let the boot screen paint first, then fetch and start the 3D engine (three.js lives in
+  // its own chunk). Building the city compiles shaders, which would otherwise hold the
+  // first frame and leave the screen black.
+  await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)))
   try {
+    const { Experience } = await import('../experience/Experience')
     exp = new Experience({
       canvas: canvas.value!,
       root: root.value!,
@@ -197,18 +214,6 @@ onMounted(() => {
     failed.value = true
     ready.value = true
   }
-
-  captions = [...root.value!.querySelectorAll<HTMLElement>('[data-from]')].map((el) => ({
-    el,
-    from: Number(el.dataset.from),
-    to: Number(el.dataset.to),
-  }))
-  sync()
-
-  addEventListener('wheel', onWheel, { passive: true })
-  addEventListener('touchstart', onTouchStart, { passive: true })
-  addEventListener('touchmove', onTouchMove, { passive: true })
-  addEventListener('keydown', onKey)
 })
 
 onBeforeUnmount(() => {
