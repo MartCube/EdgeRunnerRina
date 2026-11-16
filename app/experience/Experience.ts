@@ -78,6 +78,7 @@ export class Experience {
   private readonly root: HTMLElement
   private lite: boolean
   private first = true
+  private frames = 0
   private raf = 0
   private last = 0
   private readonly start = performance.now()
@@ -99,7 +100,7 @@ export class Experience {
     // so the first thing seen after it is the finished scene, never a half-built one.
     let pending = 2
     const loaded = () => {
-      if (--pending === 0) requestAnimationFrame(() => opts.onReady())
+      if (--pending === 0) void this.warmUp().then(() => opts.onReady())
     }
     this.roof = new RooftopChapter(loaded)
     this.city.group.add(this.roof.group)
@@ -268,6 +269,24 @@ export class Experience {
     s.setProperty('--beat', f.beat.toFixed(3))
 
     this.composer.render(f.dt)
+    this.frames++
+  }
+
+  /**
+   * Compiles every shader in the scene, then waits for a few real frames to be drawn, so the
+   * boot screen only lifts once the city is actually on screen and not a black canvas.
+   */
+  private async warmUp() {
+    try {
+      await this.renderer.compileAsync(this.scene, this.camera)
+    } catch {
+      // Older drivers without parallel compile still compile on the first frames below.
+    }
+    const target = this.frames + 3
+    await new Promise<void>((resolve) => {
+      const check = () => (this.frames >= target ? resolve() : requestAnimationFrame(check))
+      check()
+    })
   }
 
   /** Plays her heart pose, as a click on her does. */
