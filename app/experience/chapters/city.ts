@@ -307,7 +307,7 @@ export class CityChapter {
           vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
           fragmentShader: /* glsl */ `
             varying vec2 vUv; uniform vec3 uColor;
-            void main() { float a = pow(1.0 - abs(vUv.x - 0.5) * 2.0, 2.0) * pow(1.0 - vUv.y, 1.5); gl_FragColor = vec4(uColor * a, a); }
+            void main() { float a = pow(max(1.0 - abs(vUv.x - 0.5) * 2.0, 0.0), 2.0) * pow(max(1.0 - vUv.y, 0.0), 1.5); gl_FragColor = vec4(uColor * a, a); }
           `,
         }),
       )

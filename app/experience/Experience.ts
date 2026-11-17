@@ -1,4 +1,4 @@
-import { Color, DirectionalLight, FogExp2, Group, HalfFloatType, HemisphereLight, PerspectiveCamera, PMREMGenerator, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three'
+import { Color, DirectionalLight, FogExp2, Group, HalfFloatType, HemisphereLight, NoToneMapping, ACESFilmicToneMapping, UnsignedByteType, PerspectiveCamera, PMREMGenerator, Raycaster, Scene, Vector2, Vector3, WebGLRenderer } from 'three'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import {
   BloomEffect,
@@ -53,7 +53,10 @@ export class Experience {
   hoverable = true
 
   private readonly renderer: WebGLRenderer
-  private readonly composer: EffectComposer
+  private composer: EffectComposer
+  /** 0 full quality, 1 8-bit buffers, 2 no bloom, 3 no post-processing. Lowered if a frame comes out black. */
+  private gfx = 0
+  private frameProbe: ((max: number) => void) | null = null
   private readonly scene = new Scene()
   private readonly camera = new PerspectiveCamera(55, 1, 0.3, 4000)
   private readonly city = new CityChapter()
@@ -93,7 +96,7 @@ export class Experience {
       time: 0, dt: 0.016, pointer: { x: 0, y: 0 }, beat: 0, beatIndex: 0, level: 0, lite: opts.lite, progress: this.progress,
     }
 
-    this.renderer = new WebGLRenderer({ canvas: opts.canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false })
+    this.renderer = new WebGLRenderer({ canvas: opts.canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true })
     this.renderer.setClearColor(new Color(HEX.void))
 
     // The boot screen stays up until her art and her model have both loaded (or failed),
@@ -165,6 +168,12 @@ export class Experience {
   private buildPasses() {
     this.composer.removeAllPasses()
     this.composer.addPass(new RenderPass(this.scene, this.camera))
+    if (this.gfx >= 2) {
+      // Fallback for graphics cards that draw the full chain black: just tone mapping.
+      this.composer.addPass(new EffectPass(this.camera, new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC })))
+      this.resize()
+      return
+    }
     const grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: false })
     grain.blendMode.opacity.value = 0.1
     this.composer.addPass(
@@ -268,8 +277,14 @@ export class Experience {
     const s = this.root.style
     s.setProperty('--beat', f.beat.toFixed(3))
 
-    this.composer.render(f.dt)
+    if (this.gfx >= 3) this.renderer.render(this.scene, this.camera)
+    else this.composer.render(f.dt)
     this.frames++
+    if (this.frameProbe) {
+      const done = this.frameProbe
+      this.frameProbe = null
+      done(this.brightest())
+    }
   }
 
   /**
@@ -282,11 +297,61 @@ export class Experience {
     } catch {
       // Older drivers without parallel compile still compile on the first frames below.
     }
-    const target = this.frames + 3
-    await new Promise<void>((resolve) => {
+    const forced = Number(new URLSearchParams(location.search).get('gfx'))
+    if (forced > 0) this.setGfx(Math.min(3, forced))
+    // Some graphics cards accept the post-processing setup but draw nothing but black.
+    // Look at a real frame; if it is black, step down to a simpler pipeline and look again.
+    for (;;) {
+      await this.waitFrames(3)
+      const max = await new Promise<number>((resolve) => (this.frameProbe = resolve))
+      console.info(`[rina] graphics level ${this.gfx}, brightest pixel ${max}, GPU: ${this.gpuName()}`)
+      if (max > 12 || this.gfx >= 3) break
+      this.setGfx(this.gfx + 1)
+    }
+  }
+
+  private waitFrames(n: number) {
+    const target = this.frames + n
+    return new Promise<void>((resolve) => {
       const check = () => (this.frames >= target ? resolve() : requestAnimationFrame(check))
       check()
     })
+  }
+
+  private setGfx(level: number) {
+    this.gfx = level
+    if (level >= 3) {
+      // Straight to the screen: three.js does the tone mapping itself.
+      this.renderer.toneMapping = ACESFilmicToneMapping
+      return
+    }
+    this.renderer.toneMapping = NoToneMapping
+    this.composer.dispose()
+    this.composer = new EffectComposer(this.renderer, { frameBufferType: level >= 1 ? UnsignedByteType : HalfFloatType })
+    this.buildPasses()
+  }
+
+  /** Brightest channel value (0-255) over a grid of points on the frame just drawn. */
+  private brightest() {
+    const gl = this.renderer.getContext()
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    const w = gl.drawingBufferWidth
+    const h = gl.drawingBufferHeight
+    const px = new Uint8Array(4)
+    let max = 0
+    for (let y = 1; y < 16; y++) {
+      for (let x = 1; x < 16; x++) {
+        gl.readPixels(Math.floor((x / 16) * w), Math.floor((y / 16) * h), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+        max = Math.max(max, px[0]!, px[1]!, px[2]!)
+      }
+    }
+    return max
+  }
+
+  private gpuName() {
+    const gl = this.renderer.getContext()
+    const ext = gl.getExtension('WEBGL_debug_renderer_info')
+    return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
   }
 
   /** Plays her heart pose, as a click on her does. */
