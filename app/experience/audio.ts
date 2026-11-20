@@ -13,7 +13,8 @@ export class AudioEngine {
 
   constructor(src: string) {
     this.el = new Audio(src)
-    this.el.preload = 'auto'
+    // Nothing is fetched until the visitor turns sound on; the track then streams.
+    this.el.preload = 'none'
     // The track ends cleanly and is not a seamless loop; restarting it is fine for a demo.
     this.el.loop = true
     this.el.volume = 0.8

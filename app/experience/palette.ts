@@ -4,7 +4,7 @@ import { Color, DataTexture, NearestFilter, RedFormat } from 'three'
 export const HEX = {
   void: 0x07070c,
   panel: 0x10101a,
-  pink: 0xff2a6d,
+  pink: 0xff2bd6,
   cyan: 0x00f0ff,
   orange: 0xff7a59,
   gold: 0xd4a24c,

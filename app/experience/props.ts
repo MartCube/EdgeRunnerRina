@@ -12,7 +12,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
  * `public/models/manifest.json`. On load the placeholder is hidden and the model takes its
  * place, scaled so its height matches the slot. See `public/models/README.md`.
  */
-export const SLOT_IDS = ['rina', 'parcel', 'rooftop-set', 'street-prop'] as const
+export const SLOT_IDS = ['rina', 'rina-hd', 'rooftop-set', 'street-prop'] as const
 export type SlotId = (typeof SLOT_IDS)[number]
 
 type Manifest = Partial<Record<SlotId, string>>

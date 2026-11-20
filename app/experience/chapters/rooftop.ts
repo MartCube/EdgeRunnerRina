@@ -14,7 +14,7 @@ import {
 } from 'three'
 import type { PerspectiveCamera } from 'three'
 import { HEX, col, lerp, smooth } from '../palette'
-import type { Frame } from '../types'
+import type { Frame, RinaView } from '../types'
 import { ROOF } from './city'
 
 /** Height of the figure in scene units. */
@@ -142,19 +142,29 @@ export class RooftopChapter {
     this.group.add(this.card)
   }
 
-  pose(p: number, ware: number, camera: PerspectiveCamera, target: Vector3, f: Frame) {
+  /**
+   * The camera in front of Rina.
+   * @param p  0 to 1, the landing: the camera closes in as it goes.
+   * @param v  What the visitor is doing: file open, dragged around her, looking at a part.
+   */
+  pose(p: number, v: RinaView, camera: PerspectiveCamera, target: Vector3, f: Frame) {
     const e = smooth(0, 0.7, p)
-    // On a wide screen she stands right of centre so the dossier text has room.
+    // A tall screen needs more distance to fit her in.
     const wide = smooth(0.9, 1.5, camera.aspect)
-    const dist = lerp(15.5, 11.5, e) * lerp(1.5, 1, wide) + ware * 16
-    camera.position.set(
-      ROOF.x + lerp(0, 2.5, e) + f.pointer.x * 1.3,
-      this.focus.y + lerp(1.4, 0.3, e) + f.pointer.y * 0.6 + ware * 9,
-      this.focus.z + dist,
+    const stand = lerp(15.5, 11.5, e) * lerp(1.5, 1, wide) + v.link * lerp(4, 1.5, wide)
+    const dist = lerp(stand, v.partDist, v.zoom)
+    const feetY = this.focus.y - TALL * 0.52
+    target.set(
+      this.focus.x + v.partX * v.zoom,
+      // With her file open on a phone the panels fill the lower half, so she moves up.
+      lerp(this.focus.y - v.link * (1 - wide) * 3.4, feetY + TALL * v.partY, v.zoom),
+      this.focus.z,
     )
-    target.copy(this.focus)
-    target.x -= lerp(0, 4.2, e) * wide
-    target.y += ware * 12
+    camera.position.set(
+      target.x + Math.sin(v.orbit) * dist + f.pointer.x * 1.3 * (1 - v.zoom * 0.6),
+      target.y + lerp(1.4, 0.3, e) * (1 - v.zoom) + f.pointer.y * 0.6 * (1 - v.zoom * 0.6),
+      target.z + Math.cos(v.orbit) * dist,
+    )
   }
 
   update(p: number, f: Frame) {
