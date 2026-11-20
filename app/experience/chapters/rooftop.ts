@@ -28,8 +28,10 @@ export const TALL = 9.4
 export class RooftopChapter {
   readonly group = new Group()
   readonly focus = new Vector3(ROOF.x, ROOF.y + TALL * 0.52, ROOF.z + 18)
-  /** Placeholder roof furniture, and where a Blender rooftop set goes instead. */
+  /** Placeholder roof furniture, and where the Blender rooftop set goes instead. */
   readonly furniture = new Group()
+  /** The parts that move with the music, kept whether or not the Blender set is in. */
+  readonly fixtures = new Group()
   readonly setHolder = new Group()
   /** Where Rina's model stands; the card is her placeholder. */
   readonly figureHolder = new Group()
@@ -72,7 +74,7 @@ export class RooftopChapter {
     this.beacon = new MeshBasicMaterial({ color: col(HEX.pink, 2) })
     const lamp = new Mesh(new BoxGeometry(0.7, 0.7, 0.7), this.beacon)
     lamp.position.set(ROOF.x + 17, top + 20.3, ROOF.z + 8)
-    this.furniture.add(mast, lamp)
+    this.fixtures.add(mast, lamp)
 
     // The neon frame behind her.
     this.frame = new MeshBasicMaterial({ color: col(HEX.pink, 1.7) })
@@ -94,14 +96,14 @@ export class RooftopChapter {
     label.position.set(0, 4.3, 0.05)
     sign.add(label)
     sign.position.set(ROOF.x + 2.5, top + 9.4, ROOF.z + 11)
-    this.furniture.add(sign)
+    this.fixtures.add(sign)
     for (const x of [-4, 9]) {
       const post = new Mesh(new BoxGeometry(0.35, 3.4, 0.35), flat(0x1a1a28))
       post.position.set(ROOF.x + x, top + 1.7, ROOF.z + 11)
-      this.furniture.add(post)
+      this.fixtures.add(post)
     }
 
-    this.group.add(this.furniture)
+    this.group.add(this.furniture, this.fixtures)
     this.setHolder.position.set(ROOF.x, top, ROOF.z)
     this.figureHolder.position.set(ROOF.x, top, ROOF.z + 18)
     this.group.add(this.setHolder, this.figureHolder)

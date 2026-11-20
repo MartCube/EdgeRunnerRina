@@ -20,13 +20,15 @@ import {
   SphereGeometry,
   Vector3,
 } from 'three'
-import type { CanvasTexture, PerspectiveCamera } from 'three'
+import type { CanvasTexture, Object3D, PerspectiveCamera } from 'three'
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js'
 import { HEX, col, lerp, rng, smooth } from '../palette'
 import type { Frame } from '../types'
 import { cityUniforms, common } from './city/glsl'
 import { adverts, horizontalSigns, ticker, verticalSigns } from './city/signs'
 import { Traffic } from './city/traffic'
+import { FacadeKit } from './city/kit'
+import type { Facade, RoofSpot } from './city/kit'
 
 /** Half width of the street, pavements included. The road itself is ROAD wide each side. */
 const STREET = 13
@@ -63,6 +65,11 @@ export class CityChapter {
   private readonly tickers: { tex: CanvasTexture; mesh: Mesh }[] = []
   private readonly beams: Mesh[] = []
   private readonly adMats: ShaderMaterial[] = []
+  /** Street walls and roofs, kept for the Blender facade kit, which loads later. */
+  private readonly facades: Facade[] = []
+  private readonly roofSpots: RoofSpot[] = []
+  private kit?: FacadeKit
+  private lite = false
 
   constructor() {
     const rand = rng(1337)
@@ -82,9 +89,14 @@ export class CityChapter {
     const tower = (x: number, z: number, w: number, d: number, h: number, street: boolean) => {
       const seed = rand()
       let top = 0
+      const side = Math.sign(x)
+      const wall = (bw: number, bd: number, y0: number, y1: number) =>
+        street && this.facades.push({ x: x - side * bw / 2, side, z0: z - bd / 2, z1: z + bd / 2, y0, y1 })
       if (street) {
         const podium = lerp(12, 22, rand())
         box(x, podium / 2, z, w, podium, d, 1, seed)
+        // Clutter starts above the shop signs.
+        wall(w, d, 8, podium)
         top = podium
       }
       const tiers = h > 90 ? 3 : h > 45 ? 2 : 1
@@ -93,6 +105,7 @@ export class CityChapter {
       for (let t = 0; t < tiers; t++) {
         const th = ((h - top) / (tiers - t)) * (t === tiers - 1 ? 1 : lerp(0.7, 1.1, rand()))
         box(x, top + th / 2, z, tw, th, td, 0, seed + t * 0.013)
+        wall(tw, td, top + 0.5, top + th)
         top += th
         tw *= lerp(0.62, 0.86, rand())
         td *= lerp(0.62, 0.86, rand())
@@ -121,6 +134,7 @@ export class CityChapter {
         const cz = z - d / 2
         const top = tower(side * (STREET + w / 2), cz, w, d, h, true)
         roofs.push({ x: side * (STREET + w / 2), top, z: cz, side })
+        this.roofSpots.push({ x: side * (STREET + w / 2), top, z: cz })
         const w2 = lerp(34, 54, rand())
         tower(side * (STREET + 44 + w2 / 2), cz, w2, d + 8, lerp(110, 290, rand()), false)
 
@@ -568,7 +582,16 @@ export class CityChapter {
     return mesh
   }
 
+  /** Hangs the Blender facade kit (public/models/city-kit.glb) on the street walls. */
+  dress(kit: Object3D) {
+    this.kit = new FacadeKit(kit, this.facades, this.roofSpots)
+    this.kit.setLite(this.lite)
+    this.group.add(this.kit.group)
+  }
+
   setLite(lite: boolean) {
+    this.lite = lite
+    this.kit?.setLite(lite)
     this.rainMesh.geometry.setDrawRange(0, lite ? 1600 : Infinity)
     // Lite drops the real reflection (a second render of the city) and half the glow.
     this.mirror.visible = !lite

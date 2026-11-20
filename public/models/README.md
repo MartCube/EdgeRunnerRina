@@ -4,14 +4,17 @@ Drop GLB files here and list them in `manifest.json`. A slot with no entry keeps
 
 ```json
 {
-  "rina": "rina.glb"
+  "rina": "rina.glb",
+  "rooftop-set": "rooftop.glb",
+  "city-kit": "city-kit.glb"
 }
 ```
 
 | Slot id | What it replaces | Notes |
 | --- | --- | --- |
 | `rina` | Her 2D art on the rooftop | In use: `rina.glb`, made from `source-models/rina.glb` by `tools/rina-model`. Needs the clips `wait`, `look_around` and `heart_pose` (see `app/experience/rina.ts`). |
-| `rooftop-set` | AC units, mast and sign frame on her roof | One object group, about 40 m wide. Leave the middle clear for her. |
+| `rooftop-set` | The block AC units and parapet on her roof | In use: `rooftop.glb`, built by `tools/city/build_rooftop.py`. Kept at its own size (the roof is 50 across); the neon frame, mast and beacon stay in code. |
+| `city-kit` | Nothing; adds clutter to the street walls and roofs | In use: `city-kit.glb`, built by `tools/city/build_kit.py`. Meshes named `<piece>__<material>`; see `app/experience/chapters/city/kit.ts`. |
 | `street-prop` | Nothing yet; placed at six spots on the pavement | A vending machine, stall or terminal. |
 
 ## Export settings (File > Export > glTF 2.0)

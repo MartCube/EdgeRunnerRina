@@ -210,6 +210,8 @@ onMounted(async () => {
       onHover: (over) => (hover.value = over),
       onPick: pick,
     })
+    // A handle for poking at the scene from the browser console while developing.
+    if (import.meta.dev) Object.assign(window, { __exp: exp })
   } catch {
     failed.value = true
     ready.value = true
