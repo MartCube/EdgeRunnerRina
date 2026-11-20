@@ -12,7 +12,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
  * `public/models/manifest.json`. On load the placeholder is hidden and the model takes its
  * place, scaled so its height matches the slot. See `public/models/README.md`.
  */
-export const SLOT_IDS = ['rina', 'rina-hd', 'rooftop-set', 'street-prop'] as const
+export const SLOT_IDS = ['rina', 'rina-hd', 'rooftop-set', 'city-kit', 'street-prop'] as const
 export type SlotId = (typeof SLOT_IDS)[number]
 
 type Manifest = Partial<Record<SlotId, string>>
@@ -62,13 +62,14 @@ export class Props {
   /**
    * Fills a slot if a model is listed for it.
    * @param holder    Group the model is added to; its origin is where the model's base goes.
-   * @param height    Height in scene units the model is scaled to.
+   * @param height    Height in scene units the model is scaled to, or null to keep the
+   *                  model's own size and origin (sets built to scale, like the rooftop).
    * @param placeholder  Hidden once the model is in.
    */
-  fill(id: SlotId, holder: Object3D, height: number, placeholder?: Object3D) {
+  fill(id: SlotId, holder: Object3D, height: number | null, placeholder?: Object3D) {
     void this.load(id).then((gltf) => {
       if (!gltf) return
-      holder.add(fit(gltf.scene, height))
+      holder.add(height === null ? gltf.scene : fit(gltf.scene, height))
       if (placeholder) placeholder.visible = false
       // Play the first animation, for example an idle baked in Blender.
       if (gltf.animations[0]) {
