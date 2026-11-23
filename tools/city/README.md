@@ -6,7 +6,7 @@ Two scripts build the city's Blender models. Both run in Blender's background mo
 | Script | Makes | Used by |
 | --- | --- | --- |
 | `build_rooftop.py` | `rooftop.glb`: Rina's roof. Stair hut with a lit door, water tank, AC units, pipes, satellite dishes, cables and puddles. | Slot `rooftop-set`. Built to scale (the roof is 50 across), with its origin in the middle of the roof surface. |
-| `build_towers.py` | `towers.glb`: six street towers (stepped, stacked flats, chamfered, twin slabs, balcony slab, overhang). Meshes named `<tower>__<part>`: `wall`, `trim`, `neon_pink`, `neon_cyan`. | Slot `towers`. `app/experience/chapters/city/towers.ts` squeezes them onto about 24 tall street lots in place of the plain boxes, and draws walls with the city's window shader. |
+| `build_towers.py` | `towers.glb`: twelve street towers (stepped, stacked flats, chamfered, twin slabs, balcony slab, overhang, pagoda crown, Kowloon cluster, hotel, ring arcology, antenna block, night market). Meshes named `<tower>__<part>`: `wall`, `trim`, `neon_pink`, `neon_cyan`. | Slot `towers`. `app/experience/chapters/city/towers.ts` squeezes them onto most street lots and about half the second row in place of the plain boxes, and draws walls with the city's window shader. |
 | `build_kit.py` | `city-kit.glb`: facade and roof clutter. AC units, balconies with laundry, fire escapes, pipes, vents, water tanks, stair huts and antennas. | Slot `city-kit`. `app/experience/chapters/city/kit.ts` scatters a few thousand copies over the street walls and roofs. |
 
 ```bash

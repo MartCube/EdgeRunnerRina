@@ -1,4 +1,4 @@
-"""Six street towers, modelled in Blender, that replace the plain boxes on many street lots.
+"""Twelve street towers, modelled in Blender, that replace the plain boxes on many street lots.
 
 Run (Blender 4.2+ or the `bpy` pip package):
     python tools/city/build_towers.py out.glb
@@ -70,6 +70,12 @@ def podium(sx=30.0, sy=30.0, cx=0.0):
     return [b('wall', cx, 0, 0, POD, sx, sy),
             b('trim', cx + sx / 2 + 1.4, 0, 4.6, 5.0, 2.8, sy - 2),
             b('neon_cyan', cx + sx / 2 + 2.8, 0, 4.62, 4.98, 0.1, sy - 2)]
+
+
+def frame(part, x, cy, z0, z1, w, t=0.3):
+    """A neon outline on a sign board facing the street: four thin tubes, not a solid panel."""
+    return [b(part, x, cy, z1 - t, z1, 0.12, w), b(part, x, cy, z0, z0 + t, 0.12, w),
+            b(part, x, cy - w / 2 + t / 2, z0, z1, 0.12, t), b(part, x, cy + w / 2 - t / 2, z0, z1, 0.12, t)]
 
 
 def mast(x, y, z, h):
@@ -169,7 +175,7 @@ p += [b('trim', 12.4, 13.2, POD, 70, 2.8, 0.4), b('trim', 12.4, -13.2, POD, 70, 
 p.append(b('neon_pink', 13.85, 0, 69, 69.4, 0.12, 26))
 # A billboard frame on the roof and a water tank.
 p += [b('trim', 4, 0, 70, 84, 0.6, 18), b('trim', 4, 9, 70, 84, 0.8, 0.8), b('trim', 4, -9, 70, 84, 0.8, 0.8),
-      b('neon_cyan', 4.36, 0, 76, 84, 0.1, 17.2)]
+      ] + frame('neon_cyan', 4.36, 0, 70.6, 83.6, 17.2)
 p.append(('trim', cyl('tank', (-7, -6, 70 + 3.5), 3.2, 7, M['trim'], sides=14)))
 tower('slab', p)
 
@@ -188,6 +194,95 @@ p.append(b('trim', 0, 0, 98, 99, 30.6, 30.6))
 p.append(b('trim', -6, 6, 99, 104, 8, 7))
 p += mast(6, -6, 99, 12)
 tower('overhang', p)
+
+# ---- G: pagoda crown, a plain shaft topped by flared tiers ----
+p = podium()
+p += ledge(POD, 30, 30, neon='neon_cyan')
+p.append(b('wall', 0, 0, POD, 78, 24, 24))
+for k in range(4):
+    z0 = 78 + k * 9
+    w = 22 - k * 4
+    p.append(b('wall', 0, 0, z0, z0 + 6, w, w))
+    roof = cyl('flare', (0, 0, z0 + 7), (w + 7) * 0.72, 2.2, M['trim'], sides=4, r2=(w - 1) * 0.72)
+    roof.rotation_euler = (0, 0, math.pi / 4)
+    p.append(('trim', roof))
+    glow = cyl('edge', (0, 0, z0 + 6.0), (w + 7) * 0.72 + 0.05, 0.2, M['neon_pink'], sides=4)
+    glow.rotation_euler = (0, 0, math.pi / 4)
+    p.append(('neon_pink', glow))
+p.append(('trim', cyl('spire', (0, 0, 122), 0.6, 12, M['trim'], sides=6, r2=0.08)))
+tower('pagoda', p)
+
+# ---- H: Kowloon cluster, flats piled on flats, air conditioners everywhere ----
+p = podium()
+p += ledge(POD, 30, 30)
+z = POD
+while z < 96:
+    hgt = random.uniform(6, 14)
+    for _ in range(3):
+        w = random.uniform(9, 16)
+        d = random.uniform(9, 16)
+        cx = random.uniform(-14 + w / 2, 14 - w / 2) + 1.5
+        cy = random.uniform(-14 + d / 2, 14 - d / 2)
+        top = min(z + hgt * random.uniform(0.8, 1.6), 104)
+        p.append(b('wall', cx, cy, z, top, w, d))
+        p.append(b('trim', cx, cy, top, top + 0.5, w + 0.4, d + 0.4))
+        for _ in range(4):
+            az = random.uniform(z + 1, top - 1)
+            ay = random.uniform(cy - d / 2 + 1, cy + d / 2 - 1)
+            p.append(b('trim', cx + w / 2 + 0.45, ay, az, az + 0.8, 0.9, 1.1))
+        if random.random() < 0.35:
+            p.append(b(random.choice(['neon_pink', 'neon_cyan']), cx + w / 2 + 0.06, cy, z + 0.5, top - 0.5, 0.12, 0.25))
+    z += hgt
+p += mast(2, 3, 104, 10)
+tower('cluster', p)
+
+# ---- I: hotel, a slab with a tall sign frame on its corner and a helipad ----
+p = podium()
+p += ledge(POD, 30, 30, neon='neon_pink')
+p.append(b('wall', -1, 0, POD, 96, 26, 22))
+p += [b('trim', 14.5, 12.5, POD + 4, 92, 3.2, 1.2), b('trim', 14.5, 12.5, POD + 4, POD + 4.6, 3.6, 1.6)]
+for zz in range(int(POD) + 8, 90, 8):
+    p.append(b('neon_cyan' if (zz // 8) % 2 else 'neon_pink', 16.15, 12.5, zz, zz + 5.5, 0.12, 0.9))
+p.append(b('trim', -1, 0, 96, 97, 27, 23))
+p.append(('trim', cyl('pad', (-1, 0, 97.6), 9, 1.2, M['trim'], sides=24)))
+p.append(('neon_cyan', cyl('padring', (-1, 0, 98.25), 7.5, 0.12, M['neon_cyan'], sides=24)))
+tower('hotel', p)
+
+# ---- J: ring arcology, a round tower wrapped in floating rings ----
+p = podium()
+p += ledge(POD, 30, 30, neon='neon_cyan')
+p.append(('wall', cyl('core', (0, 0, (POD + 128) / 2), 12.5, 128 - POD, M['wall'], sides=12)))
+for zz in (42, 74, 106):
+    p.append(('trim', cyl('ring', (0, 0, zz), 15, 1.6, M['trim'], sides=24)))
+    p.append(('neon_pink', cyl('glow', (0, 0, zz - 0.9), 15.05, 0.18, M['neon_pink'], sides=24)))
+p.append(('trim', cyl('top', (0, 0, 129), 12.5, 2, M['trim'], sides=12, r2=6)))
+p += mast(0, 0, 130, 12)
+tower('rings', p)
+
+# ---- K: squat block crowded with antennas, dishes and a billboard ----
+p = podium()
+p += ledge(POD, 30, 30)
+p.append(b('wall', -1, 0, POD, 46, 27, 28))
+p.append(b('trim', -1, 0, 46, 46.6, 27.6, 28.6))
+for _ in range(9):
+    x, y, hh = random.uniform(-12, 8), random.uniform(-12, 12), random.uniform(4, 11)
+    p.append(('trim', cyl('ant', (x, y, 46 + hh / 2), 0.18, hh, M['trim'], sides=6)))
+for x, y in ((-8, 8), (-6, -9)):
+    dish = cyl('dish', (x, y, 48), 2.2, 0.5, M['trim'], sides=16, r2=0.4)
+    dish.rotation_euler = (0, 0.9, 0)
+    p.append(('trim', dish))
+p += [b('trim', 9, 0, 46, 56, 0.6, 20)] + frame('neon_pink', 9.35, 0, 46.4, 55.6, 19.4)
+tower('antenna', p)
+
+# ---- L: night market, two low floors under big sign boards ----
+p = podium(30, 30)
+p.append(b('wall', -2, 0, POD, 30, 26, 30))
+p.append(b('trim', -2, 0, 30, 30.6, 26.6, 30.6))
+for y, part in ((-8, 'neon_cyan'), (7, 'neon_pink')):
+    p += [b('trim', 11.6, y, 16, 27, 0.5, 12)] + frame(part, 11.9, y, 16.4, 26.6, 11.4)
+p.append(b('trim', 2, 0, 30.6, 36, 8, 10))
+p.append(('trim', cyl('tank', (-8, 7, 33.5), 2.6, 5, M['trim'], sides=14)))
+tower('market', p)
 
 export(out)
 print('wrote', out)

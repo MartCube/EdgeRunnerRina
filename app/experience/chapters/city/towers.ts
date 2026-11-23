@@ -1,5 +1,6 @@
 import { Group, InstancedBufferAttribute, InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, Quaternion, Vector3 } from 'three'
-import type { BufferGeometry, Object3D, ShaderMaterial } from 'three'
+import { BufferAttribute, BufferGeometry } from 'three'
+import type { Object3D, ShaderMaterial } from 'three'
 import { HEX, col, rng } from '../../palette'
 
 /**
@@ -13,8 +14,8 @@ const FOOT = 30
 type Part = 'wall' | 'trim' | 'neon_pink' | 'neon_cyan'
 
 /**
- * The Blender towers: six designs (stepped, stacked flats, chamfered, twin slabs, balcony
- * slab, overhang), each squeezed to fit its lot. Walls and trim are drawn with the city's own
+ * The Blender towers: twelve designs from tools/city/build_towers.py, each squeezed to fit
+ * its lot. Walls and trim are drawn with the city's own
  * window shader, so their windows, shopfronts and fog match the box towers around them; the
  * neon strips glow. One instanced mesh per design and part keeps it to a couple of dozen draws.
  */
@@ -31,7 +32,7 @@ export class TowerModels {
       const [design, part] = (named?.name ?? '').split('__') as [string, Part]
       if (!design || !part) return
       if (!designs.has(design)) designs.set(design, new Map())
-      designs.get(design)!.set(part, o.geometry.clone().applyMatrix4(o.matrixWorld))
+      designs.get(design)!.set(part, unpack(o.geometry).applyMatrix4(o.matrixWorld))
     })
     if (!designs.size) return
 
@@ -57,7 +58,7 @@ export class TowerModels {
       const want = Math.log(lot.h / lot.w)
       const ranked = info
         .filter((d) => d.name !== last)
-        .map((d) => ({ d, score: Math.abs(Math.log(d.aspect) - want) + rand() * 0.6 }))
+        .map((d) => ({ d, score: Math.abs(Math.log(d.aspect) - want) + rand() * 0.9 }))
         .sort((a, b) => a.score - b.score)
       last = ranked[0]!.d.name
       lot.design = last
@@ -91,4 +92,21 @@ export class TowerModels {
       }
     }
   }
+}
+
+/**
+ * A float copy of a geometry. towers.glb is meshopt-packed, which stores positions and normals
+ * as small integers; transforming those in place would clip everything outside -1..1.
+ */
+function unpack(src: BufferGeometry): BufferGeometry {
+  const geo = new BufferGeometry()
+  for (const name of ['position', 'normal'] as const) {
+    const a = src.getAttribute(name)
+    if (!a) continue
+    const out = new Float32Array(a.count * 3)
+    for (let i = 0; i < a.count; i++) out.set([a.getX(i), a.getY(i), a.getZ(i)], i * 3)
+    geo.setAttribute(name, new BufferAttribute(out, 3))
+  }
+  if (src.index) geo.setIndex(src.index.clone())
+  return geo
 }

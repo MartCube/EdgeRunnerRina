@@ -94,14 +94,14 @@ export class CityChapter {
       halos.push({ x, y, z, size, color: color.clone().multiplyScalar(gain) })
 
     /** A tower in up to three tiers, each set back from the one below, with clutter on top. */
-    const tower = (x: number, z: number, w: number, d: number, h: number, street: boolean) => {
+    const tower = (x: number, z: number, w: number, d: number, h: number, street: boolean, row2 = false) => {
       const seed = rand()
       let top = 0
       const side = Math.sign(x)
-      // Some tall street lots get a Blender tower (towers.ts) in place of these boxes. The
+      // Most street lots and about half the second row get a Blender tower (towers.ts) in place of these boxes. The
       // boxes are still built, as the fallback, but without the clutter the model replaces.
       // The pick uses its own random stream, so the rest of the city is laid out as before.
-      const modelled = street && h > 46 && pickModel() < 0.6
+      const modelled = (street || row2) && pickModel() < (street ? 0.85 : 0.55)
       const first = boxes.length
       const wall = (bw: number, bd: number, y0: number, y1: number) =>
         street && !modelled && this.facades.push({ x: x - side * bw / 2, side, z0: z - bd / 2, z1: z + bd / 2, y0, y1 })
@@ -155,7 +155,7 @@ export class CityChapter {
         roofs.push({ x: side * (STREET + w / 2), top, z: cz, side })
         if (this.lots.length === lotsBefore) this.roofSpots.push({ x: side * (STREET + w / 2), top, z: cz })
         const w2 = lerp(34, 54, rand())
-        tower(side * (STREET + 44 + w2 / 2), cz, w2, d + 8, lerp(110, 290, rand()), false)
+        tower(side * (STREET + 44 + w2 / 2), cz, w2, d + 8, lerp(110, 290, rand()), false, true)
 
         // Shopfront light spilling onto the pavement.
         for (let s = z - 4; s > z - d + 2; s -= 9) halo(side * (STREET - 0.5), 3.4, s, 15, pick(), 0.2)
