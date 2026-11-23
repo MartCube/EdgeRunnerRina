@@ -27,10 +27,8 @@ joint = mat('joint', 0x121119, rough=0.9)
 metal = mat('metal', 0x6a7088, metal=0.7, rough=0.42)
 dark = mat('dark', 0x16161f, metal=0.3, rough=0.6)
 rust = mat('rust', 0x7a3b2c, metal=0.4, rough=0.7)
-kraft = mat('kraft', 0xa8713f, rough=0.85)
 puddle = mat('puddle', 0x0a0b12, metal=0.0, rough=0.04)
 paint = mat('paint', 0xffe14d, rough=0.6, emit=0xffe14d, strength=0.35)
-tape = mat('tape', 0xffe14d, rough=0.5, emit=0xffe14d, strength=0.6)
 pink = mat('neon_pink', 0xff2bd6, emit=0xff2bd6, strength=5)
 cyan = mat('neon_cyan', 0x00f0ff, emit=0x00f0ff, strength=4)
 warm = mat('lamp_warm', 0xffd9a0, emit=0xffc070, strength=7)
@@ -156,30 +154,7 @@ dish(21.0, 7.0, 1.4, -0.8)
 dish(-21.0, 19.0, 1.0, 0.7)
 dish(-6.0, 21.5, 0.8, 0.2)
 
-# ---- A courier drone pad and parcels: this is Manda Express's roof ----
-px, py2 = 15.0, -14.0
-cyl('pad', (px, py2, 0.13), 4.2, 0.06, dark, sides=40)
 import bpy  # noqa: E402
-bpy.ops.mesh.primitive_torus_add(major_radius=3.6, minor_radius=0.12, location=(px, py2, 0.18))
-bpy.context.active_object.data.materials.append(paint)
-for a in (0, math.pi / 2):
-    box('pad_mark', (px, py2, 0.17), (3.0, 0.3, 0.02), paint, rot=(0, 0, a + math.pi / 4))
-for k in range(8):
-    a = k * math.pi / 4
-    box('pad_light', (px + math.cos(a) * 4.3, py2 + math.sin(a) * 4.3, 0.2), (0.25, 0.25, 0.1), cyan)
-
-def parcel(x, y, z, w, d, h, turn=0.0):
-    box('parcel', (x, y, z + h / 2), (w, d, h), kraft, rot=(0, 0, turn))
-    box('parcel_tape', (x, y, z + h / 2), (w + 0.02, 0.16, h + 0.02), tape, rot=(0, 0, turn))
-
-
-parcel(20.0, -8.0, 0.1, 1.4, 1.1, 0.9, 0.2)
-parcel(20.2, -8.1, 1.0, 1.0, 0.8, 0.6, -0.1)
-parcel(18.4, -7.2, 0.1, 0.9, 0.9, 0.7, 0.6)
-parcel(-9.0, 7.5, 0.1, 1.2, 1.0, 0.8, -0.3)
-parcel(-8.0, 6.2, 0.1, 0.8, 0.8, 0.6, 0.4)
-parcel(-9.2, 7.4, 0.9, 0.8, 0.7, 0.5, 0.1)
-box('pallet', (19.6, -7.8, 0.06), (3.2, 2.4, 0.12), rust)
 
 # ---- Cables: hut to the mast the site draws, tank to hut ----
 sag('cable', (hx + hw / 2, hy - 1, hh + 0.2), (17.0, -8.0, 15.0), 2.2, 0.035, dark)

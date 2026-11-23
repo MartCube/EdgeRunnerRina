@@ -241,7 +241,7 @@ onBeforeUnmount(() => {
     <!-- HUD: her optic overlay is the site's interface. -->
     <header class="hud hud--top">
       <div class="hud__id">
-        <strong>MANDA EXPRESS</strong>
+        <strong>RINA MANDA</strong>
         <span>DISTRICT 7 / UNIT RM-01</span>
       </div>
       <div class="hud__tools">
@@ -265,7 +265,7 @@ onBeforeUnmount(() => {
     <main class="overlay">
       <!-- The flight: captions keyed to how far along it is. -->
       <div class="caption caption--hero" data-from="0" data-to="0.08">
-        <p class="mono">MANDA EXPRESS / DISTRICT 7 / 02:14</p>
+        <p class="mono">DISTRICT 7 / 02:14</p>
         <h1>Rina Manda</h1>
         <p class="lede">Cyborg street courier. She is waiting on a rooftop across the city.</p>
         <button v-if="stage === 'idle'" id="start" class="btn btn--main" type="button" @click="startFlight">

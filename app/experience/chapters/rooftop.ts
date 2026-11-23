@@ -1,6 +1,5 @@
 import {
   BoxGeometry,
-  CanvasTexture,
   CylinderGeometry,
   DoubleSide,
   Group,
@@ -89,12 +88,6 @@ export class RooftopChapter {
       bar.position.set(x, y, 0)
       sign.add(bar)
     }
-    const label = new Mesh(
-      new PlaneGeometry(13, 3.2),
-      new MeshBasicMaterial({ map: labelTexture('MANDA EXPRESS'), transparent: true, toneMapped: false, side: DoubleSide }),
-    )
-    label.position.set(0, 4.3, 0.05)
-    sign.add(label)
     sign.position.set(ROOF.x + 2.5, top + 9.4, ROOF.z + 11)
     this.fixtures.add(sign)
     for (const x of [-4, 9]) {
@@ -175,24 +168,4 @@ export class RooftopChapter {
     this.beacon.color.copy(col(HEX.pink, f.beatIndex % 2 ? 0.5 : 2.4))
     this.frame.color.copy(col(HEX.pink, 1.5 + f.beat * 0.7 + f.level))
   }
-}
-
-function labelTexture(text: string): CanvasTexture {
-  const c = document.createElement('canvas')
-  c.width = 1024
-  c.height = 256
-  const g = c.getContext('2d')!
-  g.fillStyle = '#00f0ff'
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
-  // Shrink the type until the words fit the canvas, whichever font has loaded.
-  let size = 170
-  do {
-    g.font = `900 ${size}px "Big Shoulders Display", Impact, sans-serif`
-    size -= 6
-  } while (g.measureText(text).width > c.width - 60 && size > 40)
-  g.fillText(text, c.width / 2, c.height / 2 + 8)
-  const tex = new CanvasTexture(c)
-  tex.colorSpace = SRGBColorSpace
-  return tex
 }

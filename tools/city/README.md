@@ -5,7 +5,7 @@ Two scripts build the city's Blender models. Both run in Blender's background mo
 
 | Script | Makes | Used by |
 | --- | --- | --- |
-| `build_rooftop.py` | `rooftop.glb`: Rina's roof. Stair hut with a lit door, water tank, AC units, pipes, satellite dishes, a drone pad, parcels, cables and puddles. | Slot `rooftop-set`. Built to scale (the roof is 50 across), with its origin in the middle of the roof surface. |
+| `build_rooftop.py` | `rooftop.glb`: Rina's roof. Stair hut with a lit door, water tank, AC units, pipes, satellite dishes, cables and puddles. | Slot `rooftop-set`. Built to scale (the roof is 50 across), with its origin in the middle of the roof surface. |
 | `build_kit.py` | `city-kit.glb`: facade and roof clutter. AC units, balconies with laundry, fire escapes, pipes, vents, water tanks, stair huts and antennas. | Slot `city-kit`. `app/experience/chapters/city/kit.ts` scatters a few thousand copies over the street walls and roofs. |
 
 ```bash

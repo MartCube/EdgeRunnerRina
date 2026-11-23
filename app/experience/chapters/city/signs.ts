@@ -9,12 +9,12 @@ const COLORS = [PINK, CYAN, AMBER, WHITE, PINK, CYAN, LIME]
 const FONT = '"Big Shoulders Display", "Noto Sans JP", "Hiragino Sans", "Yu Gothic", Impact, sans-serif'
 
 // All names are invented for this city.
-const VERTICAL = ['ラーメン', '配達', 'サイバー', 'ネオン', '酒', '薬局', 'ホテル', 'MANDA', 'NOODLE', '24H', 'DATA', 'SYNTH', 'カラオケ', '電脳', '質屋', 'BAR']
-const HORIZONTAL = ['HAKU RAMEN', 'ZENITH ARCADE', 'ORBIT BAR', 'KAZE PHARMA', 'NOVA SYNTH', 'MANDA EXPRESS', 'DEEP DIVE', 'LUCKY 7 PAWN', 'CHROME CLINIC', 'OPEN 24H']
+const VERTICAL = ['ラーメン', '配達', 'サイバー', 'ネオン', '酒', '薬局', 'ホテル', 'RAMEN', 'NOODLE', '24H', 'DATA', 'SYNTH', 'カラオケ', '電脳', '質屋', 'BAR']
+const HORIZONTAL = ['HAKU RAMEN', 'ZENITH ARCADE', 'ORBIT BAR', 'KAZE PHARMA', 'NOVA SYNTH', 'NEON NOODLE', 'DEEP DIVE', 'LUCKY 7 PAWN', 'CHROME CLINIC', 'OPEN 24H']
 const ADS: [string, string][] = [
   ['NOVA', 'DRINK THE FUTURE'],
   ['ZENITH', 'CHROME FOR EVERYONE'],
-  ['MANDA EXPRESS', 'WE TAKE THE ROOFS'],
+  ['DEEP DIVE', 'LOG IN. DROP OUT.'],
   ['ORBIT', 'SLEEP IS OPTIONAL'],
   ['KAZE', 'NEW EYES. SAME YOU.'],
   ['HAKU', 'NOODLES AT 4 AM'],
@@ -130,7 +130,7 @@ export function ticker(): CanvasTexture {
   g.fillStyle = WHITE
   g.textBaseline = 'middle'
   g.font = `900 96px ${FONT}`
-  g.fillText('MANDA EXPRESS  ///  DISTRICT 7  ///  配達  ///  ZENITH  ///  NOVA  ///', 10, 70)
+  g.fillText('DISTRICT 7  ///  電脳  ///  ZENITH  ///  NOVA  ///', 10, 70)
   const tex = finish(c)
   tex.wrapS = RepeatWrapping
   return tex
