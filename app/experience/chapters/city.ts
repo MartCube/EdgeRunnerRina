@@ -18,6 +18,8 @@ import {
   PlaneGeometry,
   ShaderMaterial,
   SphereGeometry,
+  SRGBColorSpace,
+  TextureLoader,
   Vector3,
 } from 'three'
 import type { CanvasTexture, Object3D, PerspectiveCamera } from 'three'
@@ -42,6 +44,12 @@ interface Box { x: number; y: number; z: number; w: number; h: number; d: number
 interface Light { x: number; y: number; z: number; w: number; h: number; d: number; color: Color }
 interface Halo { x: number; y: number; z: number; size: number; color: Color }
 
+/**
+ * Higgsfield billboard art for each advert slot in signs.ts (NOVA, ZENITH, MANDA EXPRESS,
+ * ORBIT, KAZE, HAKU), in public/img/ads. Empty keeps the canvas-drawn advert.
+ */
+const AD_ART = ['nova', 'zenith', 'manda', 'orbit', 'kaze', 'haku']
+
 const PALETTE = [col(HEX.pink), col(HEX.cyan), col(0xff9a3c), col(0xf4f0ff), col(0xb6ff3c)]
 
 /**
@@ -65,6 +73,8 @@ export class CityChapter {
   private readonly tickers: { tex: CanvasTexture; mesh: Mesh }[] = []
   private readonly beams: Mesh[] = []
   private readonly adMats: ShaderMaterial[] = []
+  /** Which advert each billboard shows, so Higgsfield art can replace the canvas version. */
+  private readonly adSlots: number[] = []
   /** Street walls and roofs, kept for the Blender facade kit, which loads later. */
   private readonly facades: Facade[] = []
   private readonly roofSpots: RoofSpot[] = []
@@ -252,13 +262,13 @@ export class CityChapter {
     const adGeo = new PlaneGeometry(1, 1)
     const billboard = (x: number, y: number, z: number, w: number, turn: number, i: number) => {
       const mat = new ShaderMaterial({
-        uniforms: { ...cityUniforms, uMap: { value: ads[i % ads.length] }, uSeed: { value: rand() * 20 } },
+        uniforms: { ...cityUniforms, uMap: { value: ads[i % ads.length] }, uSeed: { value: rand() * 20 }, uGain: { value: 2.3 } },
         vertexShader: /* glsl */ `
           varying vec2 vUv; varying vec3 vWorld;
           void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }
         `,
         fragmentShader: /* glsl */ `
-          varying vec2 vUv; varying vec3 vWorld; uniform sampler2D uMap; uniform float uSeed;
+          varying vec2 vUv; varying vec3 vWorld; uniform sampler2D uMap; uniform float uSeed; uniform float uGain;
           ${common}
           void main() {
             vec2 uv = vUv;
@@ -270,12 +280,13 @@ export class CityChapter {
             c *= 0.82 + 0.18 * sin(uv.y * 420.0);
             c *= 0.9 + 0.1 * sin(uTime * 30.0 + uSeed) * step(0.8, hash(vec2(t * 0.1, uSeed)));
             float frame = step(0.012, uv.x) * step(uv.x, 0.988) * step(0.02, uv.y) * step(uv.y, 0.98);
-            c = mix(vec3(0.01), c * (2.3 + uBeat * 0.4), frame);
+            c = mix(vec3(0.01), c * (uGain + uBeat * 0.4), frame);
             gl_FragColor = vec4(applyFog(c, vWorld), 1.0);
           }
         `,
       })
       this.adMats.push(mat)
+      this.adSlots.push(i % ads.length)
       const board = new Mesh(adGeo, mat)
       board.scale.set(w, w * 0.5625, 1)
       board.position.set(x, y, z)
@@ -287,8 +298,9 @@ export class CityChapter {
     roofs.forEach((r, i) => {
       if (i % 3 !== 0 || r.z > 40) return
       const w = lerp(20, 30, rand())
-      // On the roof, turned to face the street and the oncoming camera.
-      billboard(r.x - r.side * 4, r.top + w * 0.28 + 3, r.z, w, -r.side * 0.55, i)
+      // On the roof, turned to face the street and the oncoming camera. i / 3 so the roof
+      // boards cycle through every advert, not just the two that every third index lands on.
+      billboard(r.x - r.side * 4, r.top + w * 0.28 + 3, r.z, w, -r.side * 0.55, i / 3)
       box(r.x - r.side * 4, r.top + 1.5, r.z - 0.6, 0.6, 3, 0.6, 2)
     })
     megas.slice(0, 14).forEach((m, i) => {
@@ -580,6 +592,27 @@ export class CityChapter {
     })
     mesh.frustumCulled = false
     return mesh
+  }
+
+  /**
+   * Swaps the drawn adverts for the Higgsfield billboard art in public/img/ads, slot by slot
+   * as each picture arrives. A picture that fails to load leaves its canvas advert in place.
+   */
+  loadAdArt(lite: boolean) {
+    const loader = new TextureLoader()
+    AD_ART.forEach((name, slot) => {
+      if (!name) return
+      loader.load(`img/ads/${name}${lite ? '-lite' : ''}.webp`, (tex) => {
+        tex.colorSpace = SRGBColorSpace
+        tex.anisotropy = 4
+        this.adMats.forEach((mat, k) => {
+          if (this.adSlots[k] !== slot) return
+          mat.uniforms.uMap!.value = tex
+          // Generated art is fully lit edge to edge, so it needs less push than the flat canvas ads.
+          mat.uniforms.uGain!.value = 1.35
+        })
+      }, undefined, () => {})
+    })
   }
 
   /** Hangs the Blender facade kit (public/models/city-kit.glb) on the street walls. */

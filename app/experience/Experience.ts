@@ -142,6 +142,7 @@ export class Experience {
       })
       this.props.fill('rooftop-set', this.roof.setHolder, null, this.roof.furniture)
       void this.props.load('city-kit').then((kit) => kit && this.city.dress(kit.scene))
+      this.city.loadAdArt(this.lite)
       // Six spots on the pavement, in the stretch the camera flies at street level.
       for (let i = 0; i < 6; i++) {
         const spot = new Group()
