@@ -20,8 +20,8 @@ npm run generate   # static site in .output/public (what Netlify builds)
 - `app/components/RinaPanels.vue` is her file: the holo panels, the part list and the sheet viewer.
 - `app/experience/Experience.ts` owns the one WebGL canvas. The page writes flight progress and the view around Rina into it; it sets the camera, handles hover, click and drag on her, and runs the post-processing (bloom, filmic tone mapping, grain, lens fringing).
 - `app/experience/chapters/city.ts` builds the city from instanced boxes and shaders: tiered towers, shopfronts, a wet street with real reflections, glow sprites, signs, billboards and traffic. Its helpers are in `chapters/city/`.
-- `app/experience/chapters/rooftop.ts` is Rina's roof, the camera in front of her, and her fallback 2D card.
-- `app/experience/rina.ts` is the rigged Rina: her animations (wait, look_around, heart_pose), the hologram and its materialise sweep, the hover outline, and the swap to a high-detail model (slot `rina-hd`) when one is listed.
+- `app/experience/chapters/rooftop.ts` is Rina's roof, the camera in front of her, and her fallback 2D card. `chapters/roofdress.ts` dresses the roof in code: her holo pad and light column, the turning halo behind her, the vertical neon signs, parapet neon, the wet floor (rain rings and neon reflections), string lights, three holo koi, her courier drone, flying cars passing behind, and the spot lights that pick her out.
+- `app/experience/rina.ts` is the rigged Rina: her animations (wait, look_around, heart_pose), poses built in code on top of them (wave and flex: each bone is swung toward a direction in her frame), head tracking, the beat nod, the glowing optic, the pink and cyan rim light, the glitch, the hologram and its materialise sweep, the hover outline, and the swap to a high-detail model (slot `rina-hd`) when one is listed.
 - `app/experience/props.ts` loads Blender models into named slots. See `public/models/README.md` for the slots and export settings.
 - `app/experience/audio.ts` plays the track and counts beats at 123 BPM.
 - `app/experience/parked/eye.ts` is the code-built cyber eye intro, set aside for now and not loaded.
