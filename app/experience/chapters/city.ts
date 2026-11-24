@@ -618,7 +618,9 @@ export class CityChapter {
         varying vec3 vLocal; varying vec3 vNormal; varying vec3 vWorld; varying vec3 vSize; varying vec2 vInfo;
         ${common}
         void main() {
-          float seed = vInfo.x; float kind = vInfo.y;
+          // Snap the per-tower values back to exact numbers: interpolation leaves tiny errors that
+          // hash() blows up into per-pixel static on the windows and shopfronts.
+          float seed = floor(vInfo.x * 4096.0 + 0.5) / 4096.0; float kind = floor(vInfo.y + 0.5);
           vec3 n = normalize(vNormal);
           vec3 V = normalize(cameraPosition - vWorld);
           float s1 = hash(vec2(seed, 1.0)), s2 = hash(vec2(seed, 2.0)), s3 = hash(vec2(seed, 3.0)), s4 = hash(vec2(seed, 4.0));
