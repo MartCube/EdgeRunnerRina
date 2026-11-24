@@ -4,6 +4,7 @@ import gsap from 'gsap'
 import type { Experience } from '../experience/Experience'
 import { BPM } from '../experience/audio'
 import type { Stage } from '../experience/types'
+import type { Reaction } from '../experience/rina'
 import BootScreen from './BootScreen.vue'
 import RinaPanels, { type Part } from './RinaPanels.vue'
 
@@ -33,6 +34,31 @@ const pulse = ref(0)
 const label = ref('STANDBY')
 const clock = ref('')
 const touch = ref(false)
+/** What she is saying, and a key that restarts the bubble's animation for each new line. */
+const speech = ref('')
+const speechKey = ref(0)
+/** The scan callouts on her parts: shown while pointed at, and for a few seconds after landing. */
+const scanning = ref(false)
+const showScan = computed(() => stage.value === 'landed' && (hover.value || scanning.value))
+let speechTimer = 0
+let scanTimer = 0
+let greetTimer = 0
+let reactionTurn = 0
+
+/** Her reactions: the buttons in the dock, and what she says when she does each one. */
+const REACTIONS: { id: Reaction; label: string; key: string; lines: string[] }[] = [
+  { id: 'wave', label: 'Wave', key: '1', lines: ['Hey, choom. Over here.', 'Yeah, I see you.', 'You lost? This roof is mine.'] },
+  { id: 'flex', label: 'Chrome arm', key: '2', lines: ['Full chrome. Paid in cash.', 'This arm has never dropped a package.', 'Polished it this morning.'] },
+  { id: 'heart', label: 'Heart', key: '3', lines: ['Delivered with love. Mostly.', "Don't make it weird.", 'Five stars, right?'] },
+  { id: 'look', label: 'Look around', key: '4', lines: ['Corpo drones up there. Stay low.', "Rain's not stopping tonight.", 'Something is watching this roof.'] },
+  { id: 'glitch', label: 'Glitch', key: '5', lines: ['Ugh. My optic is lagging.', 'Signal is dirty tonight.', 'Who is pinging me?'] },
+]
+const CALLOUTS = [
+  { id: 'optic', side: 'r', title: 'Left optic', note: 'RM-OS 3.7 / tracking you' },
+  { id: 'tattoo', side: 'r', title: 'Sakura ink', note: 'Left shoulder' },
+  { id: 'arm', side: 'l', title: 'Chrome arm', note: 'Right, full replacement' },
+  { id: 'knee', side: 'l', title: 'Knee servos', note: 'Both legs / jump assist' },
+] as const
 
 let exp: Experience | undefined
 let flight: gsap.core.Timeline | undefined
@@ -66,7 +92,10 @@ function scrambleTo(text: string) {
     if (step / 2 >= text.length) clearInterval(scrambleTimer)
   }, 28)
 }
+/** Becomes true once she has been materialised; the dock of reactions shows from then on. */
+const solidSeen = ref(false)
 watch(stage, (s) => {
+  if (s === 'linked') solidSeen.value = true
   scrambleTo(LABELS[s].toUpperCase())
   if (!exp) return
   exp.hoverable = s === 'landed'
@@ -115,11 +144,44 @@ function land() {
   stage.value = 'landed'
   if (exp) exp.interactive = true
   sync()
+  // She notices the camera: a wave, a line, and her parts get scanned.
+  greetTimer = window.setTimeout(() => {
+    exp?.react('wave')
+    say('Took you long enough, choom.')
+    scan(4.5)
+  }, 500)
+}
+
+/** Shows a line over her head. The bubble's own animation (3.2 s) clears it; the timer is a backstop. */
+function say(text: string) {
+  speech.value = text
+  speechKey.value++
+  clearTimeout(speechTimer)
+  speechTimer = window.setTimeout(() => (speech.value = ''), 8000)
+}
+
+function scan(seconds: number) {
+  scanning.value = true
+  clearTimeout(scanTimer)
+  scanTimer = window.setTimeout(() => (scanning.value = false), seconds * 1000)
+}
+
+/** One of her reactions, from the dock, a key, or a click on her once she is solid. */
+function react(id: Reaction) {
+  if (!exp || (stage.value !== 'landed' && stage.value !== 'linked')) return
+  const r = REACTIONS.find((x) => x.id === id)!
+  exp.react(id)
+  say(r.lines[Math.floor(Math.random() * r.lines.length)]!)
+  if (id === 'glitch') pulse.value++
 }
 
 function replay() {
   if (!exp || !flight) return
   closeFile()
+  clearTimeout(greetTimer)
+  speech.value = ''
+  scanning.value = false
+  solidSeen.value = false
   exp.interactive = false
   exp.dissolve()
   gsap.to(exp.view, { orbit: 0, duration: 0.3 })
@@ -128,18 +190,38 @@ function replay() {
   flight.restart()
 }
 
-/** Clicking her: the heart pose, a pulse, and her file opens around her. */
+/**
+ * Clicking her. The first time: the heart pose, she materialises, and her file opens around
+ * her. Once she is solid, each click plays her next reaction instead.
+ */
 function pick() {
   pulse.value++
+  if (!exp) return
+  if (exp.rinaSolid) {
+    if (exp.rinaBusy) return
+    const order: Reaction[] = ['wave', 'flex', 'glitch', 'heart', 'look']
+    react(order[reactionTurn++ % order.length]!)
+    return
+  }
+  exp.heart()
+  say('Signal locked. Hi.')
+  openFile()
+}
+
+function openFile() {
   if (stage.value !== 'landed' || !exp) return
   stage.value = 'linked'
   gsap.to(exp.view, { link: 1, orbit: 0, duration: 0.9, ease: 'power2.out' })
 }
 
-/** The label beside her does the same as clicking her, for keyboards and anyone who misses her. */
+/** The label beside her: materialises her the first time, and always opens her file. */
 function connect() {
-  exp?.heart()
-  pick()
+  if (exp && !exp.rinaSolid) {
+    exp.heart()
+    say('Signal locked. Hi.')
+  }
+  pulse.value++
+  openFile()
 }
 
 function closeFile() {
@@ -162,6 +244,8 @@ function focus(part: Part | null) {
 
 const onKey = (e: KeyboardEvent) => {
   if (e.key === 'Escape') closeFile()
+  const r = REACTIONS.find((x) => x.key === e.key)
+  if (r && stage.value === 'landed' && exp?.rinaSolid) react(r.id)
 }
 
 onMounted(async () => {
@@ -214,6 +298,9 @@ onBeforeUnmount(() => {
   clearInterval(clockTimer)
   clearInterval(scrambleTimer)
   clearTimeout(holdTimer)
+  clearTimeout(speechTimer)
+  clearTimeout(scanTimer)
+  clearTimeout(greetTimer)
   flight?.kill()
   removeEventListener('keydown', onKey)
   exp?.dispose()
@@ -222,7 +309,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="site" :class="[`is-${stage}`, { 'is-booted': stage !== 'boot', 'is-lite': lite }]">
+  <div ref="root" class="site" :class="[`is-${stage}`, { 'is-booted': stage !== 'boot', 'is-lite': lite, 'is-solid': solidSeen }]">
     <canvas ref="canvas" class="stage" aria-hidden="true" />
     <div class="scanlines" aria-hidden="true" />
 
@@ -276,7 +363,28 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <i v-if="pulse" :key="pulse" class="pulse" aria-hidden="true" />
-      <p v-if="stage === 'landed'" class="mono drag-hint">Drag to look around her</p>
+
+      <!-- Her scan: labels on her optic, chrome arm, ink and knees, pinned to the model. -->
+      <div class="scan" :class="{ 'is-on': showScan }" aria-hidden="true">
+        <div v-for="c in CALLOUTS" :key="c.id" class="callout" :class="`callout--${c.side}`" :style="{ left: `var(--${c.id}-x)`, top: `var(--${c.id}-y)` }">
+          <i class="callout__dot" /><i class="callout__line" />
+          <p class="callout__text"><strong>{{ c.title }}</strong><span>{{ c.note }}</span></p>
+        </div>
+      </div>
+
+      <!-- What she says, over her head. -->
+      <p v-if="speech && (stage === 'landed' || stage === 'linked')" :key="speechKey" class="speech" role="status" @animationend="speech = ''">{{ speech }}</p>
+
+      <!-- Reactions: once she is solid, the dock (or keys 1 to 5, or clicking her) plays one. -->
+      <div v-if="stage === 'landed'" class="dock">
+        <p class="mono dock__hint">{{ solidSeen ? (touch ? 'Tap her, or pick one' : 'Click her, press 1 to 5, or pick one') : 'Drag to look around her' }}</p>
+        <div v-if="solidSeen" class="dock__row">
+          <button v-for="r in REACTIONS" :key="r.id" class="chip dock__btn" type="button" @click="react(r.id)">
+            <kbd v-if="!touch">{{ r.key }}</kbd>{{ r.label }}
+          </button>
+          <button class="chip dock__btn dock__btn--file" type="button" @click="openFile">Her file</button>
+        </div>
+      </div>
 
       <RinaPanels :open="stage === 'linked'" @close="closeFile" @focus="focus" />
     </main>

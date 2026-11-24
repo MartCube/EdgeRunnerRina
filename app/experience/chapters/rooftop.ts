@@ -15,6 +15,7 @@ import type { PerspectiveCamera } from 'three'
 import { HEX, col, lerp, smooth } from '../palette'
 import type { Frame, RinaView } from '../types'
 import { ROOF } from './city'
+import { RoofDress } from './roofdress'
 
 /** Height of the figure in scene units. */
 export const TALL = 9.4
@@ -37,7 +38,8 @@ export class RooftopChapter {
   readonly card: Mesh
   private readonly figure: ShaderMaterial
   private readonly beacon: MeshBasicMaterial
-  private readonly frame: MeshBasicMaterial
+  /** Pad, halo, signs, koi, drone, traffic and her lights: see roofdress.ts. */
+  readonly dress = new RoofDress()
 
   constructor(onLoad: () => void) {
     const top = ROOF.y
@@ -75,28 +77,7 @@ export class RooftopChapter {
     lamp.position.set(ROOF.x + 17, top + 20.3, ROOF.z + 8)
     this.fixtures.add(mast, lamp)
 
-    // The neon frame behind her.
-    this.frame = new MeshBasicMaterial({ color: col(HEX.pink, 1.7) })
-    const sign = new Group()
-    for (const [x, y, w, h] of [
-      [0, 6.1, 15, 0.28],
-      [0, -6.1, 15, 0.28],
-      [-7.4, 0, 0.28, 12.4],
-      [7.4, 0, 0.28, 12.4],
-    ] as const) {
-      const bar = new Mesh(new BoxGeometry(w, h, 0.28), this.frame)
-      bar.position.set(x, y, 0)
-      sign.add(bar)
-    }
-    sign.position.set(ROOF.x + 2.5, top + 9.4, ROOF.z + 11)
-    this.fixtures.add(sign)
-    for (const x of [-4, 9]) {
-      const post = new Mesh(new BoxGeometry(0.35, 3.4, 0.35), flat(0x1a1a28))
-      post.position.set(ROOF.x + x, top + 1.7, ROOF.z + 11)
-      this.fixtures.add(post)
-    }
-
-    this.group.add(this.furniture, this.fixtures)
+    this.group.add(this.furniture, this.fixtures, this.dress.group)
     this.setHolder.position.set(ROOF.x, top, ROOF.z)
     this.figureHolder.position.set(ROOF.x, top, ROOF.z + 18)
     this.group.add(this.setHolder, this.figureHolder)
@@ -166,6 +147,6 @@ export class RooftopChapter {
     this.figure.uniforms.uScan!.value = smooth(0.06, 0.55, p)
     this.figure.uniforms.uTime!.value = f.time
     this.beacon.color.copy(col(HEX.pink, f.beatIndex % 2 ? 0.5 : 2.4))
-    this.frame.color.copy(col(HEX.pink, 1.5 + f.beat * 0.7 + f.level))
+    this.dress.update(f)
   }
 }

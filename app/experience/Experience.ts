@@ -20,7 +20,10 @@ import { RooftopChapter, TALL } from './chapters/rooftop'
 import { HEX } from './palette'
 import { Props } from './props'
 import { Rina } from './rina'
+import type { Anchor, Reaction } from './rina'
 import type { Frame, Progress, RinaView } from './types'
+
+const ANCHORS: Anchor[] = ['optic', 'arm', 'tattoo', 'knee', 'head']
 
 export interface ExperienceOptions {
   canvas: HTMLCanvasElement
@@ -71,6 +74,7 @@ export class Experience {
   private readonly canvas: HTMLCanvasElement
   private readonly opts: ExperienceOptions
   private readonly probe = new Vector3()
+  private readonly gazeAt = new Vector3()
   private readonly bloom: BloomEffect
   private readonly target = new Vector3()
   private readonly lookAt = new Vector3()
@@ -362,6 +366,19 @@ export class Experience {
     this.rina.heart()
   }
 
+  /** Plays one of her reactions (wave, flex, heart, glitch, look around). */
+  react(r: Reaction) {
+    this.rina.react(r)
+  }
+
+  /** Whether she has been materialised, and whether a reaction is still playing. */
+  get rinaSolid() {
+    return this.rina.isSolid
+  }
+  get rinaBusy() {
+    return this.rina.busy
+  }
+
   /** Holds her in her standing pose (while her file is open) or lets her look around again. */
   steady(on: boolean) {
     this.rina.steady = on
@@ -393,16 +410,20 @@ export class Experience {
     const drag = this.drag
     this.drag = null
     if (!drag || drag.moved || !this.interactive) return
-    if (this.rina.hit(this.rayAt(e.clientX, e.clientY))) {
-      this.rina.heart()
-      this.opts.onPick()
-    }
+    // The page decides what a click on her does: materialise her first, then her reactions.
+    if (this.rina.hit(this.rayAt(e.clientX, e.clientY))) this.opts.onPick()
   }
 
   /** Rina's animations, her hover outline, and where the HUD around her goes on screen. */
   private updateRina(dt: number, time: number) {
     const p = this.progress
-    this.rina.update(dt, time, p.run > 0.85)
+    // Once landed she watches the camera, and turns fully toward it while pointed at.
+    this.rina.gaze = this.gazeAt.copy(this.camera.position)
+    this.gazeAt.x += this.frame.pointer.x * 3
+    this.gazeAt.y += this.frame.pointer.y * 2
+    this.rina.gazeWeight = this.interactive ? (this.over ? 1 : 0.7) : 0
+    this.rina.update(dt, time, p.run > 0.85, this.audio.playing ? this.frame.beat : 0)
+    this.roof.dress.solid += ((this.rina.isSolid ? 1 : 0) - this.roof.dress.solid) * Math.min(1, dt * 2)
     if (!this.rina.ready) return
 
     const over = this.interactive && this.hoverable && this.pointerSeen && !this.drag?.moved
@@ -426,6 +447,12 @@ export class Experience {
       s.setProperty('--rina-x', `${x.toFixed(1)}px`)
       s.setProperty('--rina-top', `${((1 - head.y) * 0.5 * innerHeight).toFixed(1)}px`)
       s.setProperty('--rina-bottom', `${bottom.toFixed(1)}px`)
+      // The labelled points on her (optic, chrome arm, tattoo, knee) for the scan callouts.
+      for (const a of ANCHORS) {
+        const pt = this.rina.anchor(a, this.probe).project(this.camera)
+        s.setProperty(`--${a}-x`, `${((pt.x + 1) * 0.5 * innerWidth).toFixed(1)}px`)
+        s.setProperty(`--${a}-y`, `${((1 - pt.y) * 0.5 * innerHeight).toFixed(1)}px`)
+      }
     }
   }
 

@@ -23,8 +23,8 @@ node tools/city/pack.mjs /tmp/kit.glb public/models/city-kit.glb --keep-names
 `--keep-names` matters for the kit: each mesh is named `<piece>__<material>`, and the site groups
 them by piece. Without it, pieces that share a material would be merged into one.
 
-The neon frame, mast and beacon on Rina's roof stay in code (`chapters/rooftop.ts`), because they
-pulse with the music. Tripo models can join the kit later: add them as new pieces in
+The mast and beacon on Rina's roof stay in code (`chapters/rooftop.ts`), and everything that moves or
+pulses with the music (signs, halo, koi, drone, traffic) is in `chapters/roofdress.ts`. Tripo models can join the kit later: add them as new pieces in
 `build_kit.py` (import the GLB, name it `<piece>__<material>`) and give them placements in `kit.ts`.
 
 ## Megabuildings

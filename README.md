@@ -2,7 +2,7 @@
 
 A portfolio site built around Rina Manda, a cyborg street courier. One delivery, seen through her cyber eye.
 
-The page does not scroll. A second and a half after Enter, a flight starts by itself: over a generated night city, down between the towers and up to Rina's rooftop. There she waits as a cyan hologram and looks around now and then. Pointing at her draws an outline; clicking her plays her heart pose, materialises her from the feet up and opens her file: who she is, her cyberware (pick a part and the camera moves in on it) and her character sheets.
+The page does not scroll. A second and a half after Enter, a flight starts by itself: over a generated night city, down between the towers and up to Rina's rooftop. There she waits as a cyan hologram on a projector pad, waves when the camera arrives and follows you with her head. Pointing at her draws an outline and pins scan labels to her optic, chrome arm, ink and knees; clicking her plays her heart pose, materialises her from the feet up and opens her file: who she is, her cyberware (pick a part and the camera moves in on it) and her character sheets. Once she is solid, clicking her, the dock under her or the keys 1 to 5 play her reactions (wave, chrome arm flex, heart, look around, glitch), each with a line in a speech bubble.
 
 The plan for the richer city (Tripo models, a Blender-built scene, Higgsfield plates) is in the project's "Rina site v2" plan; this is Phase 1 of it.
 
