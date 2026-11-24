@@ -284,5 +284,99 @@ p.append(b('trim', 2, 0, 30.6, 36, 8, 10))
 p.append(('trim', cyl('tank', (-8, 7, 33.5), 2.6, 5, M['trim'], sides=14)))
 tower('market', p)
 
+# ==== Megabuildings for the far skyline: names start with "mega_" ====
+
+def band(z, r, part='neon_cyan', sides=4, rot=math.pi / 4):
+    o = cyl('band', (0, 0, z), r, 0.5, M[part], sides=sides)
+    o.rotation_euler = (0, 0, rot)
+    return (part, o)
+
+
+# ---- Arcology: stacked megablocks, each set in, with sky gardens between ----
+p = []
+z, w = 0.0, 30.0
+for k in range(6):
+    hgt = [60, 70, 60, 55, 45, 35][k]
+    p.append(b('wall', 0, 0, z, z + hgt, w, w))
+    p.append(b('trim', 0, 0, z + hgt, z + hgt + 1.2, w + 1.6, w + 1.6))
+    p.append(b('neon_pink' if k % 2 else 'neon_cyan', 0, 0, z + hgt + 1.25, z + hgt + 1.6, w + 1.7, w + 1.7))
+    # A sky garden: a narrower recessed core before the next block.
+    z += hgt + 1.2
+    p.append(b('wall', 0, 0, z, z + 6, w * 0.55, w * 0.55))
+    for dx, dy in ((-1, -1), (-1, 1), (1, -1), (1, 1)):
+        p.append(b('trim', dx * w * 0.42, dy * w * 0.42, z, z + 6, 1.2, 1.2))
+    z += 6
+    w *= 0.86
+for k in range(5):
+    p.append(b('neon_pink', w / 2 + 0.5, -w / 2 + 2 + k * (w - 4) / 4, 4, z - 10, 0.3, 0.5))
+p += mast(0, 0, z, 60)
+p += mast(w * 0.3, w * 0.3, z, 30)
+tower('mega_arcology', p)
+
+# ---- Spire: a cathedral of tapering tiers ending in a needle ----
+p = []
+z, r = 0.0, 15.0
+for k in range(7):
+    hgt = 70 - k * 6
+    o = cyl('tier', (0, 0, z + hgt / 2), r, hgt, M['wall'], sides=8, r2=r * 0.86)
+    o.rotation_euler = (0, 0, math.pi / 8)
+    p.append(('wall', o))
+    p.append(band(z + hgt, r * 0.9, 'neon_cyan' if k % 2 else 'neon_pink', sides=8, rot=math.pi / 8))
+    z += hgt
+    r *= 0.84
+for a in range(4):
+    ang = a * math.pi / 2 + math.pi / 4
+    fin = box('fin', (math.cos(ang) * 13, math.sin(ang) * 13, 120), (1.2, 1.2, 240), M['trim'])
+    fin.rotation_euler = (math.sin(ang) * 0.06, -math.cos(ang) * 0.06, 0)
+    p.append(('trim', fin))
+    p.append(b('neon_pink', math.cos(ang) * 13.7, math.sin(ang) * 13.7, 10, 220, 0.25, 0.25))
+p.append(('trim', cyl('needle', (0, 0, z + 50), r, 100, M['trim'], sides=8, r2=0.2)))
+p.append(b('neon_cyan', 0, 0, z + 98, z + 101, 1.5, 1.5))
+tower('mega_spire', p)
+
+# ---- Disc: a tower carrying a huge platform near the top ----
+p = []
+p.append(b('wall', 0, 0, 0, 260, 22, 22))
+for zz in range(40, 260, 40):
+    p.append(b('trim', 0, 0, zz, zz + 1, 23.6, 23.6))
+p.append(('trim', cyl('stem', (0, 0, 280), 8, 40, M['trim'], sides=16, r2=14)))
+p.append(('wall', cyl('disc', (0, 0, 306), 34, 12, M['wall'], sides=40, r2=28)))
+p.append(('trim', cyl('lip', (0, 0, 299.5), 34.6, 1.2, M['trim'], sides=40)))
+p.append(('neon_pink', cyl('edge', (0, 0, 300.3), 34.7, 0.4, M['neon_pink'], sides=40)))
+p.append(('wall', cyl('dome', (0, 0, 318), 16, 12, M['wall'], sides=24, r2=6)))
+p += mast(0, 0, 324, 40)
+for zz in range(20, 250, 22):
+    p.append(b('neon_cyan', 11.06, 0, zz, zz + 0.4, 0.12, 22))
+tower('mega_disc', p)
+
+# ---- Helix: a round tower wrapped in a rising neon spiral ----
+p = []
+p.append(('wall', cyl('core', (0, 0, 160), 13, 320, M['wall'], sides=16, r2=10)))
+steps = 140
+for k in range(steps):
+    t = k / steps
+    ang = t * math.pi * 2 * 6
+    rr = 13.6 - 3.0 * t
+    seg = box('h', (math.cos(ang) * rr, math.sin(ang) * rr, 8 + t * 300), (1.4, 0.5, 0.5), M['neon_pink'])
+    seg.rotation_euler = (0, 0, ang + math.pi / 2)
+    p.append(('neon_pink', seg))
+for zz in (80, 160, 240):
+    p.append(('trim', cyl('ring', (0, 0, zz), 17 - zz * 0.012, 2, M['trim'], sides=24)))
+    p.append(('neon_cyan', cyl('rg', (0, 0, zz - 1.1), 17.05 - zz * 0.012, 0.25, M['neon_cyan'], sides=24)))
+p += mast(0, 0, 320, 50)
+tower('mega_helix', p)
+
+# ---- Slabs: three blades of different heights, bridged ----
+p = []
+for y, h in ((-10, 300), (0, 360), (10, 250)):
+    p.append(b('wall', 0, y, 0, h, 30, 8.5))
+    p.append(b('trim', 0, y, h, h + 2, 31, 9.5))
+    p.append(b('neon_cyan' if y else 'neon_pink', 15.06, y, 10, h - 4, 0.12, 0.4))
+for zz in (90, 170, 230):
+    p.append(b('wall', 3, 0, zz, zz + 8, 14, 28))
+    p.append(b('neon_pink', 10.06, 0, zz + 3.5, zz + 4.2, 0.12, 28))
+p += mast(0, 0, 362, 50)
+tower('mega_slabs', p)
+
 export(out)
 print('wrote', out)
