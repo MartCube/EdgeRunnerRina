@@ -49,7 +49,7 @@ export class Experience {
   readonly audio = new AudioEngine('audio/d-minor-drive.mp3')
   readonly progress: Progress = { run: 0, rina: 0 }
   /** The camera around Rina; the page tweens it. */
-  readonly view: RinaView = { link: 0, orbit: 0, zoom: 0, partY: 0.52, partX: 0, partDist: 6 }
+  readonly view: RinaView = { link: 0, orbit: 0, tilt: 0, dolly: 1, zoom: 0, partY: 0.52, partX: 0, partDist: 6 }
   /** Set by the page once the camera has landed: only then does she react to the pointer. */
   interactive = false
   /** Whether the hover outline may show; the page turns it off while her file is open. */
@@ -70,7 +70,12 @@ export class Experience {
   private readonly ndc = new Vector2()
   private pointerSeen = false
   private over = false
-  private drag: { x: number; orbit: number; moved: boolean } | null = null
+  private drag: { x: number; y: number; orbit: number; tilt: number; moved: boolean; lastX: number; lastY: number; lastT: number } | null = null
+  /** Spin left over from a flick, in radians per second, so she keeps turning and slows down. */
+  private spin = { orbit: 0, tilt: 0 }
+  /** Two fingers on the screen: their distance when the pinch began, and the dolly then. */
+  private pinch: { d: number; dolly: number } | null = null
+  private readonly touches = new Map<number, { x: number; y: number }>()
   private readonly canvas: HTMLCanvasElement
   private readonly opts: ExperienceOptions
   private readonly probe = new Vector3()
@@ -103,12 +108,13 @@ export class Experience {
     this.renderer = new WebGLRenderer({ canvas: opts.canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: true })
     this.renderer.setClearColor(new Color(HEX.void))
 
-    // The boot screen stays up until her art and her model have both loaded (or failed),
-    // so the first thing seen after it is the finished scene, never a half-built one.
-    let pending = 2
-    const loaded = () => {
-      if (--pending === 0) void this.warmUp().then(() => opts.onReady())
-    }
+    // The boot screen stays up until everything has loaded (or failed): her art, her model,
+    // the rooftop set, the towers, the facade kit, the street props and the skyline. Then
+    // every shader is compiled and real frames are checked over the city and on her roof,
+    // so nothing pops in or stalls later and the first thing seen is the finished scene.
+    let artLoaded!: () => void
+    const art = new Promise<void>((r) => (artLoaded = r))
+    const loaded = () => artLoaded()
     this.roof = new RooftopChapter(loaded)
     this.city.group.add(this.roof.group)
     this.scene.add(this.city.group)
@@ -128,35 +134,34 @@ export class Experience {
     cyanKey.position.set(5, 2, 3)
     this.scene.add(new HemisphereLight(0x8fa8ff, 0x2a1030, 0.25), pinkKey, cyanKey)
 
-    void this.props.init().then(() => {
-      void this.props.load('rina').then((gltf) => {
-        if (!gltf) return loaded()
-        try {
-          this.rina.attach(gltf, this.roof.figureHolder, TALL)
-          this.roof.card.visible = false
-        } finally {
-          loaded()
-        }
-        // The light model is on screen at once. On a full-detail visit the high-detail one
-        // loads behind it during the flight and takes over when it is ready.
+    const models = this.props.init().then(() => {
+      const rina = this.props.load('rina').then(async (gltf) => {
+        if (!gltf) return
+        this.rina.attach(gltf, this.roof.figureHolder, TALL)
+        this.roof.card.visible = false
+        // A high-detail model, if one is listed, loads before the boot screen lifts too.
         if (this.lite) return
-        void this.props.load('rina-hd').then((hd) => {
-          if (hd) this.rina.attach(hd, this.roof.figureHolder, TALL)
-        })
-      })
-      this.props.fill('rooftop-set', this.roof.setHolder, null, this.roof.furniture)
-      void this.props.load('city-kit').then((kit) => kit && this.city.dress(kit.scene))
-      this.city.loadSkyline(this.lite)
-      void this.props.load('towers').then((towers) => towers && this.city.build(towers.scene))
+        const hd = await this.props.load('rina-hd')
+        if (hd) this.rina.attach(hd, this.roof.figureHolder, TALL)
+      }).catch((err) => console.warn('[rina] model failed', err))
+      const jobs: Promise<unknown>[] = [
+        rina,
+        this.props.fill('rooftop-set', this.roof.setHolder, null, this.roof.furniture),
+        this.props.load('city-kit').then((kit) => kit && this.city.dress(kit.scene)),
+        this.city.loadSkyline(this.lite),
+        this.props.load('towers').then((towers) => towers && this.city.build(towers.scene)),
+      ]
       // Six spots on the pavement, in the stretch the camera flies at street level.
       for (let i = 0; i < 6; i++) {
         const spot = new Group()
         spot.position.set((i % 2 ? 1 : -1) * 11.2, 0.4, -350 - i * 46)
         spot.rotation.y = i % 2 ? -Math.PI / 2 : Math.PI / 2
         this.city.group.add(spot)
-        this.props.fill('street-prop', spot, 3.2)
+        jobs.push(this.props.fill('street-prop', spot, 3.2))
       }
+      return Promise.allSettled(jobs)
     })
+    void Promise.all([art, models]).then(() => this.warmUp()).then(() => opts.onReady())
 
     this.composer = new EffectComposer(this.renderer, { frameBufferType: HalfFloatType })
     this.bloom = new BloomEffect({ intensity: 1.1, luminanceThreshold: 0.9, luminanceSmoothing: 0.35, mipmapBlur: true, radius: 0.8 })
@@ -166,6 +171,7 @@ export class Experience {
     addEventListener('resize', this.resize)
     addEventListener('pointermove', this.onPointer, { passive: true })
     opts.canvas.addEventListener('pointerdown', this.onDown)
+    opts.canvas.addEventListener('wheel', this.onWheel, { passive: false })
     addEventListener('pointerup', this.onUp, { passive: true })
     addEventListener('pointercancel', this.onUp, { passive: true })
     this.raf = requestAnimationFrame(this.tick)
@@ -223,11 +229,29 @@ export class Experience {
     this.pointerRaw.x = (e.clientX / innerWidth) * 2 - 1
     this.pointerRaw.y = -((e.clientY / innerHeight) * 2 - 1)
     this.pointerSeen = e.pointerType === 'mouse' || e.pointerType === 'pen'
-    // Dragging on the scene turns the camera around her, a little way to each side.
-    if (this.drag) {
-      const dx = e.clientX - this.drag.x
-      if (Math.abs(dx) > 6) this.drag.moved = true
-      if (this.drag.moved) this.view.orbit = Math.max(-0.9, Math.min(0.9, this.drag.orbit - dx * 0.006))
+    if (this.touches.has(e.pointerId)) this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    // Two fingers: pinch to move in or out.
+    if (this.pinch && this.touches.size >= 2) {
+      this.view.dolly = clampDolly(this.pinch.dolly * (this.pinch.d / Math.max(20, this.fingerGap())))
+      return
+    }
+    // Dragging on the scene spins the camera all the way round her, and up or down a little.
+    const d = this.drag
+    if (d) {
+      const dx = e.clientX - d.x
+      const dy = e.clientY - d.y
+      if (Math.hypot(dx, dy) > 6) d.moved = true
+      if (!d.moved) return
+      this.view.orbit = d.orbit - dx * 0.0085
+      this.view.tilt = clampTilt(d.tilt + dy * 0.004)
+      // Remember how fast it is moving, for the spin after letting go.
+      const now = performance.now()
+      const dt = Math.max(1, now - d.lastT) / 1000
+      this.spin.orbit = (-(e.clientX - d.lastX) * 0.0085) / dt
+      this.spin.tilt = ((e.clientY - d.lastY) * 0.004) / dt
+      d.lastX = e.clientX
+      d.lastY = e.clientY
+      d.lastT = now
     }
   }
 
@@ -257,6 +281,14 @@ export class Experience {
       this.camera.position.x += f.pointer.x * 1.6
       this.camera.position.y += f.pointer.y * 1.0
     } else {
+      if (!this.drag && (this.spin.orbit || this.spin.tilt)) {
+        const v = this.view
+        v.orbit += this.spin.orbit * f.dt
+        v.tilt = clampTilt(v.tilt + this.spin.tilt * f.dt)
+        const decay = Math.exp(-f.dt * 2.2)
+        this.spin.orbit = Math.abs(this.spin.orbit) < 0.02 ? 0 : this.spin.orbit * decay
+        this.spin.tilt = Math.abs(this.spin.tilt) < 0.02 ? 0 : this.spin.tilt * decay
+      }
       this.roof.pose(p.rina, this.view, this.camera, this.target, f)
     }
     this.wantPos.copy(this.camera.position)
@@ -299,6 +331,8 @@ export class Experience {
    * boot screen only lifts once the city is actually on screen and not a black canvas.
    */
   private async warmUp() {
+    // Her outline, wireframe and optic are hidden until needed: show them while compiling.
+    this.rina.showAll()
     try {
       await this.renderer.compileAsync(this.scene, this.camera)
     } catch {
@@ -306,15 +340,29 @@ export class Experience {
     }
     const forced = Number(new URLSearchParams(location.search).get('gfx'))
     if (forced > 0) this.setGfx(Math.min(3, forced))
-    // Some graphics cards accept the post-processing setup but draw nothing but black.
-    // Look at a real frame; if it is black, step down to a simpler pipeline and look again.
-    for (;;) {
-      await this.waitFrames(3)
-      const max = await new Promise<number>((resolve) => (this.frameProbe = resolve))
-      console.info(`[rina] graphics level ${this.gfx}, brightest pixel ${max}, GPU: ${this.gpuName()}`)
-      if (max > 12 || this.gfx >= 3) break
-      this.setGfx(this.gfx + 1)
+    // Some graphics cards accept the post-processing setup, or one of the shaders, but draw
+    // nothing but black. Look at real frames, first over the city and then on her roof
+    // (behind the boot screen); if either is black, step down to a simpler pipeline and look
+    // again.
+    const p = this.progress
+    for (const view of ['city', 'roof'] as const) {
+      if (view === 'roof') {
+        p.run = 1
+        p.rina = 0.75
+        this.first = true
+      }
+      for (;;) {
+        await this.waitFrames(3)
+        const max = await new Promise<number>((resolve) => (this.frameProbe = resolve))
+        console.info(`[rina] ${view}: graphics level ${this.gfx}, brightest pixel ${max}, GPU: ${this.gpuName()}`)
+        if (max > 12 || this.gfx >= 3) break
+        this.setGfx(this.gfx + 1)
+      }
     }
+    p.run = 0
+    p.rina = 0
+    this.first = true
+    await this.waitFrames(2)
   }
 
   private waitFrames(n: number) {
@@ -402,13 +450,51 @@ export class Experience {
 
   private onDown = (e: PointerEvent) => {
     if (!this.interactive) return
-    this.drag = { x: e.clientX, orbit: this.view.orbit, moved: false }
+    if (e.pointerType === 'touch') {
+      this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+      if (this.touches.size === 2) {
+        this.drag = null
+        this.pinch = { d: this.fingerGap(), dolly: this.view.dolly }
+        return
+      }
+    }
+    this.spin.orbit = this.spin.tilt = 0
+    const now = performance.now()
+    this.drag = { x: e.clientX, y: e.clientY, orbit: this.view.orbit, tilt: this.view.tilt, moved: false, lastX: e.clientX, lastY: e.clientY, lastT: now }
+  }
+
+  private fingerGap() {
+    const [a, b] = [...this.touches.values()]
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 1
+  }
+
+  /** The mouse wheel moves the camera in toward her or back out. */
+  private onWheel = (e: WheelEvent) => {
+    if (!this.interactive || this.view.zoom > 0.01) return
+    e.preventDefault()
+    this.view.dolly = clampDolly(this.view.dolly * Math.exp(e.deltaY * 0.0012))
+  }
+
+  /** Puts the camera back in front of her at the usual distance: orbit taken the short way round. */
+  resetView() {
+    this.spin.orbit = this.spin.tilt = 0
+    const o = this.view.orbit
+    this.view.orbit = Math.atan2(Math.sin(o), Math.cos(o))
+    return this.view
   }
 
   /** A press that did not turn into a drag is a click: on her, it is the pick. */
   private onUp = (e: PointerEvent) => {
+    this.touches.delete(e.pointerId)
+    if (this.pinch) {
+      if (this.touches.size < 2) this.pinch = null
+      this.drag = null
+      return
+    }
     const drag = this.drag
     this.drag = null
+    // A flick keeps her turning; a slow release, or a pause before letting go, does not.
+    if (drag?.moved && performance.now() - drag.lastT > 80) this.spin.orbit = this.spin.tilt = 0
     if (!drag || drag.moved || !this.interactive) return
     // The page decides what a click on her does: materialise her first, then her reactions.
     if (this.rina.hit(this.rayAt(e.clientX, e.clientY))) this.opts.onPick()
@@ -461,6 +547,7 @@ export class Experience {
     removeEventListener('resize', this.resize)
     removeEventListener('pointermove', this.onPointer)
     this.canvas.removeEventListener('pointerdown', this.onDown)
+    this.canvas.removeEventListener('wheel', this.onWheel)
     removeEventListener('pointerup', this.onUp)
     removeEventListener('pointercancel', this.onUp)
     this.audio.dispose()
@@ -468,3 +555,7 @@ export class Experience {
     this.renderer.dispose()
   }
 }
+
+/** How far up and down the camera may swing around her, in radians. */
+const clampTilt = (t: number) => Math.max(-0.12, Math.min(0.95, t))
+const clampDolly = (d: number) => Math.max(0.5, Math.min(1.7, d))

@@ -401,7 +401,10 @@ export class Rina {
       const bone = this.bones.get(boneName)
       const child = this.bones.get(childName)
       if (!bone || !child) continue
-      const from = this.v1.subVectors(child.getWorldPosition(this.v2), bone.getWorldPosition(this.v3)).normalize()
+      const from = this.v1.subVectors(child.getWorldPosition(this.v2), bone.getWorldPosition(this.v3))
+      // A zero-length bone would give a NaN rotation and a broken (black) frame: skip it.
+      if (from.lengthSq() < 1e-10) continue
+      from.normalize()
       const to = dir(t, this.v2).normalize()
       this.q.setFromUnitVectors(from, to)
       this.q2.identity().slerp(this.q, w)
@@ -460,6 +463,16 @@ export class Rina {
     const s = this.height * (0.05 + 0.01 * Math.sin(time * 2.2) + this.glow * 0.02) * flicker
     this.optic.scale.setScalar(s)
     this.optic.material.opacity = 0.35 + this.solid * 0.65
+  }
+
+  /**
+   * Shows every extra copy of her (outline, wireframe, optic) so the loading screen can
+   * compile their shaders up front, or hands visibility back to `update`.
+   */
+  showAll() {
+    for (const o of this.outlines) o.visible = true
+    for (const w of this.wires) w.visible = true
+    this.optic.visible = true
   }
 
   /** Whether a ray from the camera passes through her. */

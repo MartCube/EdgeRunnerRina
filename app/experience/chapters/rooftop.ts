@@ -128,7 +128,7 @@ export class RooftopChapter {
     // A tall screen needs more distance to fit her in.
     const wide = smooth(0.9, 1.5, camera.aspect)
     const stand = lerp(15.5, 11.5, e) * lerp(1.5, 1, wide) + v.link * lerp(4, 1.5, wide)
-    const dist = lerp(stand, v.partDist, v.zoom)
+    const dist = lerp(stand * v.dolly, v.partDist, v.zoom)
     const feetY = this.focus.y - TALL * 0.52
     target.set(
       this.focus.x + v.partX * v.zoom,
@@ -136,10 +136,15 @@ export class RooftopChapter {
       lerp(this.focus.y - v.link * (1 - wide) * 3.4, feetY + TALL * v.partY, v.zoom),
       this.focus.z,
     )
+    // Orbit goes all the way round her; tilt lifts the camera over her. Both fade out while
+    // the camera is moved in on one of her parts.
+    const tilt = v.tilt * (1 - v.zoom)
+    const flat = Math.cos(tilt) * dist
+    const sway = 1 - Math.min(1, Math.abs(v.tilt) * 2 + v.zoom * 0.6)
     camera.position.set(
-      target.x + Math.sin(v.orbit) * dist + f.pointer.x * 1.3 * (1 - v.zoom * 0.6),
-      target.y + lerp(1.4, 0.3, e) * (1 - v.zoom) + f.pointer.y * 0.6 * (1 - v.zoom * 0.6),
-      target.z + Math.cos(v.orbit) * dist,
+      target.x + Math.sin(v.orbit) * flat + Math.cos(v.orbit) * f.pointer.x * 1.3 * sway,
+      Math.max(feetY + 0.6, target.y + Math.sin(tilt) * dist + lerp(1.4, 0.3, e) * (1 - v.zoom) + f.pointer.y * 0.6 * sway),
+      target.z + Math.cos(v.orbit) * flat - Math.sin(v.orbit) * f.pointer.x * 1.3 * sway,
     )
   }
 

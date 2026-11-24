@@ -184,7 +184,7 @@ function replay() {
   solidSeen.value = false
   exp.interactive = false
   exp.dissolve()
-  gsap.to(exp.view, { orbit: 0, duration: 0.3 })
+  gsap.to(exp.resetView(), { orbit: 0, tilt: 0, dolly: 1, duration: 0.3 })
   hover.value = false
   stage.value = 'flight'
   flight.restart()
@@ -211,7 +211,7 @@ function pick() {
 function openFile() {
   if (stage.value !== 'landed' || !exp) return
   stage.value = 'linked'
-  gsap.to(exp.view, { link: 1, orbit: 0, duration: 0.9, ease: 'power2.out' })
+  gsap.to(exp.resetView(), { link: 1, orbit: 0, tilt: 0, dolly: 1, duration: 0.9, ease: 'power2.out' })
 }
 
 /** The label beside her: materialises her the first time, and always opens her file. */
@@ -239,7 +239,8 @@ function focus(part: Part | null) {
     return
   }
   exp.settle()
-  gsap.to(v, { zoom: 1, partY: part.y, partX: part.x, partDist: part.dist, orbit: 0, duration: 0.9, ease: 'power2.inOut' })
+  exp.resetView()
+  gsap.to(v, { tilt: 0, dolly: 1, zoom: 1, partY: part.y, partX: part.x, partDist: part.dist, orbit: 0, duration: 0.9, ease: 'power2.inOut' })
 }
 
 const onKey = (e: KeyboardEvent) => {
@@ -377,7 +378,7 @@ onBeforeUnmount(() => {
 
       <!-- Reactions: once she is solid, the dock (or keys 1 to 5, or clicking her) plays one. -->
       <div v-if="stage === 'landed'" class="dock">
-        <p class="mono dock__hint">{{ solidSeen ? (touch ? 'Tap her, or pick one' : 'Click her, press 1 to 5, or pick one') : 'Drag to look around her' }}</p>
+        <p class="mono dock__hint">{{ solidSeen ? (touch ? 'Tap her, or pick one' : 'Click her, press 1 to 5, or pick one. Drag to spin around her') : (touch ? 'Drag to spin around her, pinch to zoom' : 'Drag to spin around her, scroll to zoom') }}</p>
         <div v-if="solidSeen" class="dock__row">
           <button v-for="r in REACTIONS" :key="r.id" class="chip dock__btn" type="button" @click="react(r.id)">
             <kbd v-if="!touch">{{ r.key }}</kbd>{{ r.label }}

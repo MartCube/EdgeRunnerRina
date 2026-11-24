@@ -120,7 +120,7 @@ export class RoofDress {
         varying vec2 vUv; uniform float uTime; uniform vec3 uCyan; uniform float uSolid;
         void main() {
           float lines = 0.6 + 0.4 * step(0.5, fract(vUv.x * 40.0 + uTime * 0.6));
-          float fade = pow(1.0 - vUv.y, 2.2);
+          float fade = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 2.2);
           gl_FragColor = vec4(uCyan * fade * lines * mix(0.22, 0.07, uSolid), 1.0);
         }`,
     }))
@@ -246,7 +246,9 @@ export class RoofDress {
       fragmentShader: /* glsl */ `
         varying vec2 vP; uniform float uTime; uniform vec3 uCyan; uniform vec3 uPink; uniform float uBeat;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5); }
-        float streak(float x, float at, float w) { return exp(-pow((x - at) / w, 2.0)); }
+        // d * d, not pow(d, 2.0): pow of a negative number is undefined in GLSL, and on some
+        // graphics cards it comes out NaN, which the bloom then spreads over the whole screen.
+        float streak(float x, float at, float w) { float d = (x - at) / w; return exp(-d * d); }
         void main() {
           // vP.x across the roof, vP.y from the back (-) to the front (+), in scene units.
           vec2 cell = floor(vP / 1.6);
@@ -418,7 +420,7 @@ export class RoofDress {
           void main() {
             float along = uDir > 0.0 ? vUv.x : 1.0 - vUv.x;
             float core = smoothstep(0.5, 0.0, abs(vUv.y - 0.5));
-            gl_FragColor = vec4(vec3(1.0, 0.13, 0.25) * pow(along, 2.5) * core * 1.6, 1.0);
+            gl_FragColor = vec4(vec3(1.0, 0.13, 0.25) * pow(clamp(along, 0.0, 1.0), 2.5) * core * 1.6, 1.0);
           }`,
       })),
     )
