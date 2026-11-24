@@ -16,3 +16,9 @@ node tools/higgsfield/pack-prop.mjs raw.glb public/models/vending.glb 6000 512
 It simplifies to the triangle budget, adds normals, makes the colour texture glow faintly,
 recompresses it to WebP and packs the mesh with meshopt. SAM 3 is the cheap image-to-3D model;
 Tripo H3.1 costs about 9 credits a model and gives cleaner geometry if credits allow.
+
+## Skyline
+
+`public/img/skyline.webp` (and the smaller `skyline-lite.webp`) is a Higgsfield matte painting
+of a far cyberpunk skyline. `City.loadSkyline` wraps it on a mirrored cylinder far behind the
+megabuildings, faded into the fog at its base.

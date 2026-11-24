@@ -7,7 +7,7 @@ import { HEX, col, rng } from '../../palette'
  * A street lot that gets a Blender tower. `boxes` is the range of the city's instanced boxes
  * that stand in for it until the model loads. `side` is which side of the street it is on.
  */
-export interface TowerLot { x: number; z: number; w: number; d: number; h: number; side: number; seed: number; boxes: [number, number]; design?: string }
+export interface TowerLot { x: number; z: number; w: number; d: number; h: number; side: number; seed: number; boxes: [number, number]; mega?: boolean; design?: string }
 
 /** Footprint every tower is built to in tools/city/build_towers.py. */
 const FOOT = 30
@@ -56,8 +56,9 @@ export class TowerModels {
     let last = ''
     for (const lot of lots) {
       const want = Math.log(lot.h / lot.w)
+      // Megabuildings on the skyline take the "mega_" designs; street lots the others.
       const ranked = info
-        .filter((d) => d.name !== last)
+        .filter((d) => d.name !== last && d.name.startsWith('mega_') === !!lot.mega)
         .map((d) => ({ d, score: Math.abs(Math.log(d.aspect) - want) + rand() * 0.9 }))
         .sort((a, b) => a.score - b.score)
       last = ranked[0]!.d.name
@@ -80,7 +81,7 @@ export class TowerModels {
         const attr = new Float32Array(at.length * 2)
         at.forEach((lot, i) => {
           // The street face is +X in the model: towers on the right of the street turn round.
-          q.setFromAxisAngle(up, lot.side > 0 ? Math.PI : 0)
+          q.setFromAxisAngle(up, lot.mega ? lot.seed * Math.PI * 2 : lot.side > 0 ? Math.PI : 0)
           m.compose(new Vector3(lot.x, lot.h / 2, lot.z), q, new Vector3(lot.w, lot.h, lot.d))
           mesh.setMatrixAt(i, m)
           // Walls get windows and shopfronts (kind 1); trim is plain dark (kind 2).

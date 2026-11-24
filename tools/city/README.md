@@ -26,3 +26,21 @@ them by piece. Without it, pieces that share a material would be merged into one
 The neon frame, mast and beacon on Rina's roof stay in code (`chapters/rooftop.ts`), because they
 pulse with the music. Tripo models can join the kit later: add them as new pieces in
 `build_kit.py` (import the GLB, name it `<piece>__<material>`) and give them placements in `kit.ts`.
+
+## Megabuildings
+
+`build_towers.py` also builds five `mega_*` designs (arcology, spire, disc, helix, slabs). The
+skyline megas in `city.ts` take only these; street lots take the other twelve. Each mega is
+turned by its seed so the skyline doesn't repeat.
+
+## Around the models (code only, no assets)
+
+- **Outer city**: a grid of plain window-shader boxes out to the horizon, taller near the centre,
+  so the high opening shot has no empty ground.
+- **Holo screens**: the street canyon and rooftops use additive shader screens (eye, glyph rain,
+  waveform, lattice) instead of text billboards.
+- **Haze**: three layers of tinted noise fog at 28, 95 and 190 m that fade as the camera passes.
+- **High traffic**: 140 extra flying cars on lanes 170 to 300 m up.
+- **Street life** (`city/street.ts`): about 1100 walkers on the pavements, half under umbrellas
+  with neon rims, moved entirely in the vertex shader; steam columns from road vents; and
+  additive lamplight cones under every street lamp. Lite mode draws half the crowd.
