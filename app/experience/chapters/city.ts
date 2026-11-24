@@ -30,6 +30,7 @@ import type { Frame } from '../types'
 import { cityUniforms, common } from './city/glsl'
 import { horizontalSigns, ticker, verticalSigns } from './city/signs'
 import { Traffic } from './city/traffic'
+import { StreetLife } from './city/street'
 import { FacadeKit } from './city/kit'
 import type { Facade, RoofSpot } from './city/kit'
 import { TowerModels } from './city/towers'
@@ -67,6 +68,7 @@ export class CityChapter {
   private readonly mirror: Reflector
   private readonly flatGround: Mesh
   private readonly traffic: Traffic
+  private readonly street: StreetLife
   private readonly tickers: { tex: CanvasTexture; mesh: Mesh }[] = []
   private readonly beams: Mesh[] = []
   private readonly adMats: ShaderMaterial[] = []
@@ -446,6 +448,8 @@ export class CityChapter {
 
     this.traffic = new Traffic(ROOF.z + 40, START_Z)
     this.group.add(this.traffic.group)
+    this.street = new StreetLife({ inner: ROAD + 0.8, outer: STREET - 1.8, top: 0.4, zMin: ROOF.z + 30, zMax: START_Z }, 1100)
+    this.group.add(this.street.group)
 
     // ---- Glow sprites ----
     this.haloCount = halos.length
@@ -781,6 +785,7 @@ export class CityChapter {
   setLite(lite: boolean) {
     this.lite = lite
     this.kit?.setLite(lite)
+    this.street?.setLite(lite)
     this.rainMesh.geometry.setDrawRange(0, lite ? 1600 : Infinity)
     // Lite drops the real reflection (a second render of the city) and half the glow.
     this.mirror.visible = !lite
