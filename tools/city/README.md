@@ -41,3 +41,6 @@ turned by its seed so the skyline doesn't repeat.
   waveform, lattice) instead of text billboards.
 - **Haze**: three layers of tinted noise fog at 28, 95 and 190 m that fade as the camera passes.
 - **High traffic**: 140 extra flying cars on lanes 170 to 300 m up.
+- **Street life** (`city/street.ts`): about 1100 walkers on the pavements, half under umbrellas
+  with neon rims, moved entirely in the vertex shader; steam columns from road vents; and
+  additive lamplight cones under every street lamp. Lite mode draws half the crowd.
