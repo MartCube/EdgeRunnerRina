@@ -5,7 +5,7 @@ defineProps<{ ready: boolean; failed: boolean }>()
 defineEmits<{ enter: [withSound: boolean] }>()
 
 const LINES = [
-  'MANDA EXPRESS COURIER OS 3.7',
+  'RM-01 OPTIC OS 3.7',
   'LEFT OPTIC ............ ONLINE',
   'WEATHER ............... RAIN, 9 C',
   'RIGHT ARM / KNEES ..... OK',

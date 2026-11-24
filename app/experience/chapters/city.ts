@@ -29,6 +29,8 @@ import { adverts, horizontalSigns, ticker, verticalSigns } from './city/signs'
 import { Traffic } from './city/traffic'
 import { FacadeKit } from './city/kit'
 import type { Facade, RoofSpot } from './city/kit'
+import { TowerModels } from './city/towers'
+import type { TowerLot } from './city/towers'
 
 /** Half width of the street, pavements included. The road itself is ROAD wide each side. */
 const STREET = 13
@@ -69,10 +71,16 @@ export class CityChapter {
   private readonly facades: Facade[] = []
   private readonly roofSpots: RoofSpot[] = []
   private kit?: FacadeKit
+  /** Street lots that get a Blender tower, and the instanced boxes standing in for them. */
+  private readonly lots: TowerLot[] = []
+  private towerMesh!: InstancedMesh
+  private towerMat!: ShaderMaterial
+  private towers?: TowerModels
   private lite = false
 
   constructor() {
     const rand = rng(1337)
+    const pickModel = rng(4242)
     const boxes: Box[] = []
     const lights: Light[] = []
     const halos: Halo[] = []
@@ -86,12 +94,17 @@ export class CityChapter {
       halos.push({ x, y, z, size, color: color.clone().multiplyScalar(gain) })
 
     /** A tower in up to three tiers, each set back from the one below, with clutter on top. */
-    const tower = (x: number, z: number, w: number, d: number, h: number, street: boolean) => {
+    const tower = (x: number, z: number, w: number, d: number, h: number, street: boolean, row2 = false) => {
       const seed = rand()
       let top = 0
       const side = Math.sign(x)
+      // Most street lots and about half the second row get a Blender tower (towers.ts) in place of these boxes. The
+      // boxes are still built, as the fallback, but without the clutter the model replaces.
+      // The pick uses its own random stream, so the rest of the city is laid out as before.
+      const modelled = (street || row2) && pickModel() < (street ? 0.85 : 0.55)
+      const first = boxes.length
       const wall = (bw: number, bd: number, y0: number, y1: number) =>
-        street && this.facades.push({ x: x - side * bw / 2, side, z0: z - bd / 2, z1: z + bd / 2, y0, y1 })
+        street && !modelled && this.facades.push({ x: x - side * bw / 2, side, z0: z - bd / 2, z1: z + bd / 2, y0, y1 })
       if (street) {
         const podium = lerp(12, 22, rand())
         box(x, podium / 2, z, w, podium, d, 1, seed)
@@ -110,16 +123,21 @@ export class CityChapter {
         tw *= lerp(0.62, 0.86, rand())
         td *= lerp(0.62, 0.86, rand())
       }
+      if (modelled) this.lots.push({ x, z, w, d, h: top, side, seed, boxes: [first, boxes.length] })
       // Roof clutter: plant rooms, tanks, a mast with a warning light.
       for (let k = 0; k < 3; k++) {
         const s = lerp(2.5, 6, rand())
-        box(x + (rand() - 0.5) * tw * 0.8, top + s / 2, z + (rand() - 0.5) * td * 0.8, s * 1.4, s, s, 2)
+        const bx = x + (rand() - 0.5) * tw * 0.8
+        const bz = z + (rand() - 0.5) * td * 0.8
+        if (!modelled) box(bx, top + s / 2, bz, s * 1.4, s, s, 2)
       }
       if (h > 110 || rand() > 0.7) {
         const mast = lerp(12, 46, rand())
-        box(x, top + mast / 2, z, 0.7, mast, 0.7, 2)
-        light(x, top + mast, z, 1.3, 1.3, 1.3, col(0xff2030), 4)
-        halo(x, top + mast, z, 16, col(0xff2030), 0.5)
+        if (!modelled) {
+          box(x, top + mast / 2, z, 0.7, mast, 0.7, 2)
+          light(x, top + mast, z, 1.3, 1.3, 1.3, col(0xff2030), 4)
+          halo(x, top + mast, z, 16, col(0xff2030), 0.5)
+        }
       }
       return top
     }
@@ -132,11 +150,12 @@ export class CityChapter {
         const w = lerp(24, 38, rand())
         const h = lerp(34, 130, rand() * rand())
         const cz = z - d / 2
+        const lotsBefore = this.lots.length
         const top = tower(side * (STREET + w / 2), cz, w, d, h, true)
         roofs.push({ x: side * (STREET + w / 2), top, z: cz, side })
-        this.roofSpots.push({ x: side * (STREET + w / 2), top, z: cz })
+        if (this.lots.length === lotsBefore) this.roofSpots.push({ x: side * (STREET + w / 2), top, z: cz })
         const w2 = lerp(34, 54, rand())
-        tower(side * (STREET + 44 + w2 / 2), cz, w2, d + 8, lerp(110, 290, rand()), false)
+        tower(side * (STREET + 44 + w2 / 2), cz, w2, d + 8, lerp(110, 290, rand()), false, true)
 
         // Shopfront light spilling onto the pavement.
         for (let s = z - 4; s > z - d + 2; s -= 9) halo(side * (STREET - 0.5), 3.4, s, 15, pick(), 0.2)
@@ -207,7 +226,8 @@ export class CityChapter {
     for (let z = START_Z - 30; z > ROOF.z + 60; z -= lerp(16, 40, rand())) box(0, lerp(30, 64, rand()), z, STREET * 2, 0.09, 0.09, 2)
 
     this.group.add(this.buildSky())
-    this.group.add(this.buildTowers(boxes))
+    this.towerMesh = this.buildTowers(boxes)
+    this.group.add(this.towerMesh)
 
     // ---- Signs ----
     const vTex = verticalSigns()
@@ -287,8 +307,9 @@ export class CityChapter {
     roofs.forEach((r, i) => {
       if (i % 3 !== 0 || r.z > 40) return
       const w = lerp(20, 30, rand())
-      // On the roof, turned to face the street and the oncoming camera.
-      billboard(r.x - r.side * 4, r.top + w * 0.28 + 3, r.z, w, -r.side * 0.55, i)
+      // On the roof, turned to face the street and the oncoming camera. i / 3 so the roof
+      // boards cycle through every advert, not just the two that every third index lands on.
+      billboard(r.x - r.side * 4, r.top + w * 0.28 + 3, r.z, w, -r.side * 0.55, i / 3)
       box(r.x - r.side * 4, r.top + 1.5, r.z - 0.6, 0.6, 3, 0.6, 2)
     })
     megas.slice(0, 14).forEach((m, i) => {
@@ -456,7 +477,7 @@ export class CityChapter {
   private buildTowers(boxes: Box[]) {
     const geo = new BoxGeometry(1, 1, 1)
     const info = new Float32Array(boxes.length * 2)
-    const material = new ShaderMaterial({
+    const material = (this.towerMat = new ShaderMaterial({
       uniforms: cityUniforms,
       vertexShader: /* glsl */ `
         attribute vec2 aInfo;
@@ -556,7 +577,7 @@ export class CityChapter {
           gl_FragColor = vec4(applyFog(c, vWorld), 1.0);
         }
       `,
-    })
+    }))
     const mesh = new InstancedMesh(geo, material, boxes.length)
     const m = new Matrix4()
     boxes.forEach((b, i) => {
@@ -580,6 +601,18 @@ export class CityChapter {
     })
     mesh.frustumCulled = false
     return mesh
+  }
+
+  /**
+   * Puts the Blender towers (public/models/towers.glb) on their street lots and hides the
+   * boxes that stood in for them.
+   */
+  build(models: Object3D) {
+    this.towers = new TowerModels(models, this.lots, this.towerMat)
+    this.group.add(this.towers.group)
+    const zero = new Matrix4().makeScale(0, 0, 0)
+    for (const lot of this.lots) for (let i = lot.boxes[0]; i < lot.boxes[1]; i++) this.towerMesh.setMatrixAt(i, zero)
+    this.towerMesh.instanceMatrix.needsUpdate = true
   }
 
   /** Hangs the Blender facade kit (public/models/city-kit.glb) on the street walls. */
