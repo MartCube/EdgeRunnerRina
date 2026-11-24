@@ -10,6 +10,8 @@ import RinaPanels, { type Part } from './RinaPanels.vue'
 /** Seconds the flight takes from the skyline to her roof, and the landing after it. */
 const FLIGHT = 10.5
 const LANDING = 2.6
+/** Seconds the city is held on screen after Enter before the flight starts by itself. */
+const HOLD = 1.5
 
 const LABELS: Record<Stage, string> = {
   boot: 'Standby',
@@ -37,7 +39,7 @@ let flight: gsap.core.Timeline | undefined
 let captions: { el: HTMLElement; from: number; to: number }[] = []
 let clockTimer = 0
 let scrambleTimer = 0
-let touchY = 0
+let holdTimer = 0
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const stageNumber = computed(() => (stage.value === 'landed' || stage.value === 'linked' ? '02' : '01'))
@@ -71,8 +73,10 @@ watch(stage, (s) => {
   exp.steady(s === 'linked')
 })
 
+/** Enter shows the city for a moment, then the camera flies itself to her roof. */
 async function enter(withSound: boolean) {
   stage.value = 'idle'
+  holdTimer = window.setTimeout(startFlight, reduced() ? 0 : HOLD * 1000)
   if (withSound) sound.value = (await exp?.audio.start()) ?? false
 }
 
@@ -91,8 +95,8 @@ function toggleLite() {
   exp?.setLite(lite.value)
 }
 
-/** The first scroll starts the flight; from there the camera flies itself to her roof. */
 function startFlight() {
+  clearTimeout(holdTimer)
   if (stage.value !== 'idle' || !exp) return
   stage.value = 'flight'
   const p = exp.progress
@@ -156,21 +160,12 @@ function focus(part: Part | null) {
   gsap.to(v, { zoom: 1, partY: part.y, partX: part.x, partDist: part.dist, orbit: 0, duration: 0.9, ease: 'power2.inOut' })
 }
 
-const onWheel = (e: WheelEvent) => {
-  if (e.deltaY > 0) startFlight()
-}
-const onTouchStart = (e: TouchEvent) => (touchY = e.touches[0]?.clientY ?? 0)
-const onTouchMove = (e: TouchEvent) => {
-  if (touchY - (e.touches[0]?.clientY ?? touchY) > 14) startFlight()
-}
 const onKey = (e: KeyboardEvent) => {
   if (e.key === 'Escape') closeFile()
-  if (stage.value !== 'idle' || e.target instanceof HTMLButtonElement) return
-  if (['ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) startFlight()
 }
 
 onMounted(async () => {
-  // The page itself never scrolls: one scroll gesture starts the flight.
+  // The page itself never scrolls: the flight runs by itself once the visitor enters.
   document.documentElement.classList.add('is-locked')
   const tick = () => (clock.value = new Date().toLocaleTimeString([], { hour12: false }))
   tick()
@@ -191,9 +186,6 @@ onMounted(async () => {
   }))
   sync()
 
-  addEventListener('wheel', onWheel, { passive: true })
-  addEventListener('touchstart', onTouchStart, { passive: true })
-  addEventListener('touchmove', onTouchMove, { passive: true })
   addEventListener('keydown', onKey)
 
   // Let the boot screen paint first, then fetch and start the 3D engine (three.js lives in
@@ -221,10 +213,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearInterval(clockTimer)
   clearInterval(scrambleTimer)
+  clearTimeout(holdTimer)
   flight?.kill()
-  removeEventListener('wheel', onWheel)
-  removeEventListener('touchstart', onTouchStart)
-  removeEventListener('touchmove', onTouchMove)
   removeEventListener('keydown', onKey)
   exp?.dispose()
   document.documentElement.classList.remove('is-locked')
@@ -264,14 +254,6 @@ onBeforeUnmount(() => {
 
     <main class="overlay">
       <!-- The flight: captions keyed to how far along it is. -->
-      <div class="caption caption--hero" data-from="0" data-to="0.08">
-        <p class="mono">DISTRICT 7 / 02:14</p>
-        <h1>Rina Manda</h1>
-        <p class="lede">Cyborg street courier. She is waiting on a rooftop across the city.</p>
-        <button v-if="stage === 'idle'" id="start" class="btn btn--main" type="button" @click="startFlight">
-          {{ touch ? 'Swipe up to find her' : 'Scroll to find her' }}
-        </button>
-      </div>
       <div class="caption caption--left" data-from="0.16" data-to="0.33">
         <p class="mono">SIGNAL RM-01 / RAIN / 2.4 KM</p>
         <h2>District 7 never closes</h2>
