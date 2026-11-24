@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, BufferGeometry, ConeGeometry, CylinderGeometry, DoubleSide, Group, InstancedBufferAttribute,
+  AdditiveBlending, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DoubleSide, Group, InstancedBufferAttribute,
   InstancedMesh, PlaneGeometry, ShaderMaterial, SphereGeometry, TorusGeometry,
 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
@@ -117,6 +117,46 @@ export class StreetLife {
     this.group.add(this.steam(p, rand))
   }
 
+  /**
+   * Cones of lamplight through the rain under each street lamp: an additive cone that is
+   * brightest at the lamp and soft at its edges, so the beam reads as lit air.
+   */
+  lampBeams(heads: { x: number; y: number; z: number }[], color: Color) {
+    const geo = new ConeGeometry(3.2, 1, 14, 1, true).translate(0, -0.5, 0)
+    const at = new Float32Array(heads.length * 4)
+    heads.forEach((h, i) => at.set([h.x, h.y, h.z, i * 1.7], i * 4))
+    geo.setAttribute('aAt', new InstancedBufferAttribute(at, 4))
+    const mat = new ShaderMaterial({
+      uniforms: { ...cityUniforms, uColor: { value: color } },
+      transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending,
+      vertexShader: /* glsl */ `
+        attribute vec4 aAt; varying float vH; varying vec3 vWorld; varying vec3 vN; varying float vSeed;
+        void main() {
+          vH = -position.y; vSeed = aAt.w;
+          vec3 w = vec3(position.x, position.y * aAt.y, position.z) + aAt.xyz;
+          vWorld = w; vN = normal;
+          gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor; varying float vH; varying vec3 vWorld; varying vec3 vN; varying float vSeed;
+        ${common}
+        void main() {
+          vec3 v = normalize(cameraPosition - vWorld);
+          float face = pow(abs(dot(normalize(vN), v)), 1.5);
+          float fall = (1.0 - vH) * (1.0 - vH) * 0.85 + 0.15;
+          // Rain drifting through the beam.
+          float streak = 0.75 + 0.25 * vnoise(vec2(vWorld.x * 6.0 + vWorld.z * 6.0, vWorld.y * 0.6 + uTime * 9.0 + vSeed));
+          float d = distance(vWorld, cameraPosition);
+          gl_FragColor = vec4(uColor * face * fall * streak * 0.4 * exp(-d * 0.004), 1.0);
+        }
+      `,
+    })
+    const mesh = new InstancedMesh(geo, mat, heads.length)
+    mesh.frustumCulled = false
+    this.group.add(mesh)
+  }
+
   /** Show fewer people on slow devices. */
   setLite(lite: boolean) {
     for (const m of this.crowd) m.count = lite ? Math.floor(m.geometry.getAttribute('aWalk').count / 2) : m.geometry.getAttribute('aWalk').count
@@ -161,9 +201,10 @@ export class StreetLife {
           float width = mix(0.12, 0.5, vUv.y);
           float body = smoothstep(width, 0.0, abs(vUv.x - 0.5)) * smoothstep(0.0, 0.08, vUv.y) * (1.0 - vUv.y);
           float a = body * smoothstep(0.3, 0.8, n);
-          vec3 c = (zoneColor(vWorld.z) * 0.5 + vec3(0.25, 0.22, 0.3)) * a * 2.2;
+          vec3 c = (zoneColor(vWorld.z) * 0.5 + vec3(0.25, 0.22, 0.3)) * a * 1.7;
           float d = distance(vWorld, cameraPosition);
-          gl_FragColor = vec4(c * exp(-d * 0.004), 1.0);
+          // Thin out right at the lens so flying through a plume doesn't wash the screen.
+          gl_FragColor = vec4(c * exp(-d * 0.004) * smoothstep(3.0, 16.0, d), 1.0);
         }
       `,
     })

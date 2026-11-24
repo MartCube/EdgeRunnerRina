@@ -219,12 +219,14 @@ export class CityChapter {
     }
 
     // Street lamps.
+    const lampHeads: { x: number; y: number; z: number }[] = []
     for (let z = START_Z - 10; z > ROOF.z + 40; z -= 30) {
       for (const side of [-1, 1]) {
         const x = side * (ROAD + 0.9)
         box(x, 5.5, z, 0.3, 11, 0.3, 2)
         box(x - side * 1.4, 10.9, z, 3, 0.25, 0.3, 2)
         light(x - side * 2.6, 10.7, z, 1.2, 0.16, 0.5, col(0xffe2b0), 2.2)
+        lampHeads.push({ x: x - side * 2.6, y: 10.6, z })
         halo(x - side * 2.6, 10.2, z, 18, col(0xffc070), 0.3)
       }
     }
@@ -449,6 +451,7 @@ export class CityChapter {
     this.traffic = new Traffic(ROOF.z + 40, START_Z)
     this.group.add(this.traffic.group)
     this.street = new StreetLife({ inner: ROAD + 0.8, outer: STREET - 1.8, top: 0.4, zMin: ROOF.z + 30, zMax: START_Z }, 1100)
+    this.street.lampBeams(lampHeads, col(0xffc070))
     this.group.add(this.street.group)
 
     // ---- Glow sprites ----
