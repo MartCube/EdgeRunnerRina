@@ -83,7 +83,7 @@ const POSES: Record<'wave' | 'flex', Pose> = {
     length: 2.8,
     aims: [
       ['mixamorigRightArm', 'mixamorigRightForeArm', (t, o) => o.set(-1, 0.02 + Math.sin(t * 6) * 0.03, 0.12)],
-      ['mixamorigRightForeArm', 'mixamorigRightHand', (_t, o) => o.set(0.06, 1, 0.2)],
+      ['mixamorigRightForeArm', 'mixamorigRightHand', (_t, o) => o.set(-0.18, 1, 0.22)],
       ['mixamorigRightHand', 'mixamorigRightHandMiddle1', (_t, o) => o.set(0.7, 0.35, 0.25)],
     ],
   },
@@ -154,7 +154,7 @@ export class Rina {
   private nod = 0
 
   constructor() {
-    this.optic = new Sprite(new SpriteMaterial({ map: glowTexture(), color: col(HEX.cyan, 2.2), blending: AdditiveBlending, depthWrite: false, fog: false, transparent: true }))
+    this.optic = new Sprite(new SpriteMaterial({ map: glowTexture(), color: col(HEX.cyan, 0.9), blending: AdditiveBlending, depthWrite: false, fog: false, transparent: true }))
     this.optic.renderOrder = 5
     this.optic.visible = false
   }
@@ -283,6 +283,10 @@ export class Rina {
    */
   private withScan(source: Material): Material {
     const mat = (source as MeshStandardMaterial).clone()
+    // Stronger reflections, so her chrome arm and knee caps catch the neon, and sharper
+    // textures when she is seen at an angle.
+    mat.envMapIntensity = 2.4
+    for (const tex of [mat.map, mat.normalMap, mat.roughnessMap, mat.metalnessMap]) if (tex) tex.anisotropy = 8
     const u = this.scanUniforms
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, u)
@@ -347,7 +351,7 @@ export class Rina {
     for (const o of this.outlines) o.visible = on
     this.outlineUniforms.uWidth.value = this.glow * (0.02 + 0.005 * Math.sin(time * 5))
     // The rim light brightens while she is pointed at, and pulses with the music.
-    u.uRim.value = 0.75 + this.glow * 0.9 + beat * 0.35
+    u.uRim.value = 0.38 + this.glow * 0.7 + beat * 0.2
     this.glitch = Math.max(0, this.glitch - dt * 0.9)
     u.uGlitch.value = this.glitch > 0 ? Math.min(1, this.glitch * 1.6) * (0.6 + 0.4 * Math.sin(time * 37)) : 0
 
@@ -371,6 +375,7 @@ export class Rina {
     this.root?.updateMatrixWorld(true)
     this.applyPose(dt)
     this.applyGaze(dt, time, beat)
+    this.keepHandsOut()
     this.placeOptic(time)
   }
 
@@ -444,6 +449,82 @@ export class Rina {
     }
   }
 
+  /**
+   * Keeps her hands out of her body. Her clips came from a slimmer rig, so on her baggy
+   * cargo pants and hips the hands sink in (hands on hips, the look-around, the start of the
+   * heart pose), and a code-built pose can swing a hand into her head.
+   *
+   * Her body is roughed out as capsules on the skeleton: an oval torso, a thick thigh per
+   * leg for the pants, and a ball for the head and hair. Each frame, the wrist and the middle
+   * of the hand are tested against them; if one is inside, the upper arm is turned so the
+   * hand lands just outside. Two passes, so a push out of one shape into another is caught.
+   */
+  private keepHandsOut() {
+    const h = this.height
+    const b = (n: string) => this.bones.get('mixamorig' + n)
+    const hips = b('Hips')
+    const spine = b('Spine2')
+    const head = b('Head')
+    if (!hips || !spine || !head) return
+    const hipsP = hips.getWorldPosition(this.c1)
+    const spineP = spine.getWorldPosition(this.c2)
+    const headP = head.getWorldPosition(this.c3).addScaledVector(UP, h * 0.045)
+    const shapes: [Vector3, Vector3, number, number][] = [
+      // a, b, radius, depth squash (her front-to-back is thinner than side to side)
+      [hipsP, spineP, h * 0.118, 1.35],
+      [headP, headP, h * 0.085, 1],
+    ]
+    for (const side of ['Left', 'Right']) {
+      const up = b(side + 'UpLeg')
+      const knee = b(side + 'Leg')
+      if (up && knee) shapes.push([up.getWorldPosition(new Vector3()), knee.getWorldPosition(new Vector3()), h * 0.082, 1])
+    }
+    const handR = h * 0.022
+    for (const side of ['Left', 'Right']) {
+      const arm = b(side + 'Arm')
+      const points = [b(side + 'Hand'), b(side + 'HandMiddle2')].filter((x): x is Object3D => !!x)
+      if (!arm || !points.length) continue
+      for (let pass = 0; pass < 2; pass++) {
+        let best = 0
+        const push = this.push.set(0, 0, 0)
+        let at: Vector3 | null = null
+        for (const pt of points) {
+          const p = pt.getWorldPosition(this.c4)
+          for (const [a, c, r, squash] of shapes) {
+            const near = closestOnSegment(p, a, c, this.c5)
+            const d = this.c6.subVectors(p, near)
+            d.z *= squash
+            const dist = d.length()
+            const pen = r + handR - dist
+            if (pen > best) {
+              best = pen
+              if (dist < 1e-5) d.set(side === 'Left' ? 1 : -1, 0, 0)
+              d.z /= squash
+              push.copy(d.normalize()).multiplyScalar(pen + h * 0.004)
+              at = this.c7.copy(p)
+            }
+          }
+        }
+        if (!at || best <= 0) break
+        // Swing the upper arm so this point moves out along `push`.
+        const shoulder = arm.getWorldPosition(this.c5)
+        const from = this.v1.subVectors(at, shoulder)
+        const to = this.v2.copy(at).add(push).sub(shoulder)
+        if (from.lengthSq() < 1e-8 || to.lengthSq() < 1e-8) break
+        this.q.setFromUnitVectors(from.normalize(), to.normalize())
+        this.turnWorld(arm, this.q)
+      }
+    }
+  }
+  private readonly push = new Vector3()
+  private readonly c1 = new Vector3()
+  private readonly c2 = new Vector3()
+  private readonly c3 = new Vector3()
+  private readonly c4 = new Vector3()
+  private readonly c5 = new Vector3()
+  private readonly c6 = new Vector3()
+  private readonly c7 = new Vector3()
+
   /** Where one of the labelled points on her is now, in world space. */
   anchor(name: Anchor, out: Vector3): Vector3 {
     const [boneName, x, y, z] = ANCHORS[name]
@@ -457,12 +538,25 @@ export class Rina {
     return out.add(this.v3.set(x, y, z).multiplyScalar(this.height).applyQuaternion(this.q))
   }
 
+  /**
+   * A small soft cyan point on her left optic. It stays below the bloom threshold so it
+   * reads as a lit lens, not a flare, and fades out as her face turns away from the viewer,
+   * so it never pokes out past her cheek or through her hair.
+   */
   private placeOptic(time: number) {
-    this.anchor('optic', this.optic.position)
-    const flicker = Math.sin(time * 3.1) > 0.97 ? 0.4 : 1
-    const s = this.height * (0.05 + 0.01 * Math.sin(time * 2.2) + this.glow * 0.02) * flicker
+    const pos = this.anchor('optic', this.optic.position)
+    let facing = 1
+    const head = this.bones.get('mixamorigHead')
+    const rest = this.rest.get('mixamorigHead')
+    if (this.gaze && head && rest) {
+      head.getWorldQuaternion(this.q).multiply(this.q2.copy(rest).invert())
+      const fwd = this.v1.copy(FORWARD).applyQuaternion(this.q)
+      const toViewer = this.v2.subVectors(this.gaze, pos).normalize()
+      facing = smoothstep(0.35, 0.8, fwd.dot(toViewer))
+    }
+    const s = this.height * (0.016 + 0.002 * Math.sin(time * 2.2) + this.glow * 0.004)
     this.optic.scale.setScalar(s)
-    this.optic.material.opacity = 0.35 + this.solid * 0.65
+    this.optic.material.opacity = (0.25 + this.solid * 0.45) * facing
   }
 
   /**
@@ -562,22 +656,27 @@ function glowTexture() {
   const g = c.getContext('2d')!
   const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32)
   grad.addColorStop(0, 'rgba(255,255,255,1)')
-  grad.addColorStop(0.08, 'rgba(255,255,255,0.95)')
-  grad.addColorStop(0.2, 'rgba(255,255,255,0.25)')
+  grad.addColorStop(0.25, 'rgba(255,255,255,0.55)')
+  grad.addColorStop(0.6, 'rgba(255,255,255,0.12)')
   grad.addColorStop(1, 'rgba(255,255,255,0)')
   g.fillStyle = grad
   g.fillRect(0, 0, 64, 64)
-  // A thin horizontal streak through the core, like a lens catching it.
-  const streak = g.createLinearGradient(0, 0, 64, 0)
-  streak.addColorStop(0, 'rgba(255,255,255,0)')
-  streak.addColorStop(0.5, 'rgba(255,255,255,0.7)')
-  streak.addColorStop(1, 'rgba(255,255,255,0)')
-  g.fillStyle = streak
-  g.fillRect(0, 31, 64, 2)
   return new CanvasTexture(c)
 }
 
+/** The point on segment a-b closest to p. */
+function closestOnSegment(p: Vector3, a: Vector3, b: Vector3, out: Vector3) {
+  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z
+  const len = abx * abx + aby * aby + abz * abz
+  const t = len < 1e-10 ? 0 : clamp(((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / len, 0, 1)
+  return out.set(a.x + abx * t, a.y + aby * t, a.z + abz * t)
+}
+
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
+const smoothstep = (a: number, b: number, v: number) => {
+  const t = clamp((v - a) / (b - a), 0, 1)
+  return t * t * (3 - 2 * t)
+}
 
 function rand(a: number, b: number) {
   return a + Math.random() * (b - a)

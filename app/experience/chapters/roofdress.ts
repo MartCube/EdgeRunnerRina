@@ -66,13 +66,13 @@ export class RoofDress {
 
     // Her lights: a soft key from the front left, a hard pink rim from behind on her right,
     // a cyan one from behind on her left, and cyan bouncing up off the pad.
-    const key = new SpotLight(0xffe2ee, 420, 60, 0.42, 0.7, 2)
+    const key = new SpotLight(0xfff0e4, 640, 60, 0.42, 0.7, 2)
     key.position.set(this.at.x - 7, this.top + 17, this.at.z + 16)
     key.target.position.set(this.at.x, this.top + 5, this.at.z)
-    const pinkRim = new SpotLight(HEX.pink, 520, 40, 0.5, 0.5, 2)
+    const pinkRim = new SpotLight(HEX.pink, 300, 40, 0.5, 0.5, 2)
     pinkRim.position.set(this.at.x - 6, this.top + 11, this.at.z - 9)
     pinkRim.target.position.set(this.at.x, this.top + 5, this.at.z)
-    const cyanRim = new SpotLight(HEX.cyan, 420, 40, 0.5, 0.5, 2)
+    const cyanRim = new SpotLight(HEX.cyan, 260, 40, 0.5, 0.5, 2)
     cyanRim.position.set(this.at.x + 7, this.top + 9, this.at.z - 8)
     cyanRim.target.position.set(this.at.x, this.top + 5, this.at.z)
     this.padLight = new PointLight(HEX.cyan, 30, 14, 2)
@@ -108,6 +108,21 @@ export class RoofDress {
           gl_FragColor = vec4(c, 1.0);
         }`,
     }))
+    // A soft dark patch right under her feet, so she stands on the roof instead of floating.
+    const shade = document.createElement('canvas')
+    shade.width = shade.height = 64
+    const g = shade.getContext('2d')!
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+    grad.addColorStop(0, 'rgba(0,0,0,0.85)')
+    grad.addColorStop(0.5, 'rgba(0,0,0,0.45)')
+    grad.addColorStop(1, 'rgba(0,0,0,0)')
+    g.fillStyle = grad
+    g.fillRect(0, 0, 64, 64)
+    const contact = new Mesh(new PlaneGeometry(3.2, 2.2), new MeshBasicMaterial({ map: new CanvasTexture(shade), transparent: true, depthWrite: false, fog: false }))
+    contact.rotation.x = -Math.PI / 2
+    contact.position.set(this.at.x, this.top + 0.15, this.at.z)
+    contact.renderOrder = -1
+    this.group.add(contact)
     const disc = new Mesh(new PlaneGeometry(6, 6), mat)
     disc.rotation.x = -Math.PI / 2
     disc.position.set(this.at.x, this.top + 0.16, this.at.z)
