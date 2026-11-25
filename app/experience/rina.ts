@@ -89,9 +89,10 @@ const CLOSE_SPREAD = 0.7
 /** How far the thumb is brought in from sticking out, toward the line of the fingers. */
 const THUMB_IN = 0.85
 /** Tuning knobs for the hand pass (the lab renders flip these). */
+// chromeCurl: the chrome fingers are long, so they curl further to read as a resting hand.
 // rollRight 0: the chrome hand already hangs compact once its fan is closed; rolling it as
 // well twists the chrome fingers into a hook.
-export const HAND_TUNE = { roll: 1, rollRight: 0, spread: 1, curl: 1 }
+export const HAND_TUNE = { roll: 1, rollRight: 0, spread: 1, curl: 1, chromeCurl: 1.6 }
 // How far the thumb side of a resting hand turns in toward her, from straight forward.
 const PALM_IN = 0.35
 
@@ -424,7 +425,7 @@ export class Rina {
       const index = b(side + 'HandIndex1')
       const pinky = b(side + 'HandPinky1')
       if (!hand || !index || !pinky) continue
-      let k = 1 + Math.sin(time * 0.9 + (side === 'Left' ? 1.7 : 0)) * 0.06
+      let k = (side === 'Right' ? HAND_TUNE.chromeCurl : 1) + Math.sin(time * 0.9 + (side === 'Left' ? 1.7 : 0)) * 0.06
       if (side === 'Right' && reacting === POSES.flex) k = 1 + this.poseWeight * 0.6
       if (side === 'Right' && reacting === POSES.wave) k = 1 - this.poseWeight * 0.55
       const mid = b(side + 'HandMiddle1')

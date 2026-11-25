@@ -325,7 +325,7 @@ onBeforeUnmount(() => {
       <div class="hud__tools">
         <span class="hud__stat"><i class="beat" />{{ BPM }} BPM</span>
         <span class="hud__stat hud__stat--clock">LOCAL {{ clock }}</span>
-        <button v-if="stage === 'landed'" id="replay" class="chip" type="button" @click="replay">Replay flight</button>
+        <button v-if="stage === 'landed'" id="replay" class="chip" type="button" @click="replay">Replay<span class="hide-sm"> flight</span></button>
         <button id="toggle-sound" class="chip" type="button" :aria-pressed="sound" @click="toggleSound">
           Sound {{ sound ? 'on' : 'off' }}
         </button>

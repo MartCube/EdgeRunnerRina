@@ -145,6 +145,8 @@ dd { min-width: 0; }
   font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.16em;
 }
 .lock__label::before { content: ''; width: 56px; height: 2px; background: var(--cyan); }
+/* Once she is solid the dock has a Her file button, so the connect label goes. */
+.is-solid .lock__label { display: none; }
 .lock__label span { font-size: 0.7rem; color: var(--cyan); text-shadow: 0 0 10px var(--void); }
 .lock__label strong {
   padding: 0.6rem 0.9rem; font-size: 0.82rem; font-weight: 600; color: var(--text);
@@ -287,8 +289,9 @@ dd { min-width: 0; }
   .lock__label::before { display: none; }
   .dock__hint { display: none; }
   .dock { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
-  /* Once she is solid the dock has a File button, so the label under her makes room for it. */
-  .is-solid .lock__label { display: none; }
+  .hide-sm { display: none; }
+  .hud__tools { flex-wrap: nowrap; }
+  .chip { padding: 0.4rem 0.55rem; }
   .speech { left: 50%; top: var(--head-y, 25vh); white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 2 * var(--gutter)); clip-path: none; padding: 0.55rem 0.8rem; transform: translate(-50%, calc(-100% - 14px)); animation-name: speech-up; }
   @keyframes speech-up {
     0% { opacity: 0; transform: translate(-50%, calc(-100% - 4px)) scale(0.92); }
