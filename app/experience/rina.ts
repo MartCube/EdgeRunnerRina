@@ -37,15 +37,6 @@ const FADE = 0.45
 
 /** Seconds the materialise sweep takes, feet to head. */
 const MATERIALISE = 1.7
-/**
- * The export's standing clips leave her chrome arm sunk into her hip. These bones are turned
- * outward by this many radians about the axis she faces along, on top of the clip, while she
- * stands. Positive swings a hanging arm toward +X (her left).
- */
-const ARM_RELAX: [bone: string, angle: number][] = [
-  ['mixamorigRightArm', -0.2],
-  ['mixamorigLeftArm', 0.06],
-]
 const FORWARD = new Vector3(0, 0, 1)
 const UP = new Vector3(0, 1, 0)
 const RIGHT = new Vector3(1, 0, 0)
@@ -66,6 +57,23 @@ const ANCHORS: Record<Anchor, [bone: string, x: number, y: number, z: number]> =
 interface Pose {
   length: number
   aims: [bone: string, child: string, dir: (t: number, out: Vector3) => Vector3][]
+}
+
+/**
+ * Her standing arms: hanging loose just clear of her hips and cargo pants, elbows a little
+ * bent, hands relaxed, with a slow breath in them. Mirrored, with the chrome arm a touch
+ * further out since it is heavier.
+ */
+const IDLE: Pose = {
+  length: Infinity,
+  aims: [
+    ['mixamorigRightArm', 'mixamorigRightForeArm', (t, o) => o.set(-0.23 - Math.sin(t * 1.3) * 0.01, -1, 0.02)],
+    ['mixamorigRightForeArm', 'mixamorigRightHand', (t, o) => o.set(-0.13, -1, 0.2 + Math.sin(t * 1.3) * 0.02)],
+    ['mixamorigRightHand', 'mixamorigRightHandMiddle1', (_t, o) => o.set(-0.08, -1, 0.14)],
+    ['mixamorigLeftArm', 'mixamorigLeftForeArm', (t, o) => o.set(0.2 + Math.sin(t * 1.3 + 0.8) * 0.01, -1, 0.0)],
+    ['mixamorigLeftForeArm', 'mixamorigLeftHand', (t, o) => o.set(0.1, -1, 0.17 + Math.sin(t * 1.3 + 0.8) * 0.02)],
+    ['mixamorigLeftHand', 'mixamorigLeftHandMiddle1', (_t, o) => o.set(0.05, -1, 0.12)],
+  ],
 }
 
 const POSES: Record<'wave' | 'flex', Pose> = {
@@ -118,7 +126,6 @@ export class Rina {
   private wrap?: Object3D
   private outlines: SkinnedMesh[] = []
   private wires: SkinnedMesh[] = []
-  private relaxBones: { bone: Object3D; angle: number }[] = []
   private bones = new Map<string, Object3D>()
   /** Each bone's world rotation in the bind pose, to carry offsets from her frame to the bone's. */
   private rest = new Map<string, Quaternion>()
@@ -184,7 +191,6 @@ export class Rina {
     this.wrap?.removeFromParent()
     this.outlines = []
     this.wires = []
-    this.relaxBones = []
     this.bones.clear()
     this.rest.clear()
 
@@ -213,10 +219,6 @@ export class Rina {
     for (const mesh of skinned) {
       this.outlines.push(shell(mesh, rim))
       this.wires.push(shell(mesh, wire))
-    }
-    for (const [name, angle] of ARM_RELAX) {
-      const bone = this.bones.get(name)
-      if (bone) this.relaxBones.push({ bone, angle })
     }
     this.wrap = fit(gltf.scene, height)
     holder.add(this.wrap)
@@ -367,12 +369,13 @@ export class Rina {
     }
     a.mixer.update(dt)
 
-    // Ease her arms out from her body while she stands; the heart pose is left as exported.
-    const want = a.current === 'heart_pose' || this.pose ? 0 : 1
-    this.relax += (want - this.relax) * (1 - Math.exp(-dt * 6))
-    for (const { bone, angle } of this.relaxBones) this.turnWorld(bone, this.q2.setFromAxisAngle(FORWARD, angle * this.relax))
-
     this.root?.updateMatrixWorld(true)
+    // While she stands, her arms hang relaxed at her sides instead of the export's
+    // hands-on-hips, which pressed her hands into her hips. Her own clips (look around,
+    // heart) take the arms back as they play.
+    const want = a.current === 'wait' ? 1 : 0
+    this.relax += (want - this.relax) * (1 - Math.exp(-dt * 5))
+    if (this.relax > 0.001) this.aim(IDLE, time, this.relax * this.relax * (3 - 2 * this.relax))
     this.applyPose(dt)
     this.applyGaze(dt, time, beat)
     this.keepHandsOut()
@@ -401,8 +404,12 @@ export class Rina {
     const target = p ? Math.min(1, t / 0.35, (len - t) / 0.5) : 0
     this.poseWeight = p ? Math.max(0, target) : Math.max(0, this.poseWeight - dt * 2.5)
     if (this.poseWeight <= 0.001 || !this.lastPose) return
-    const w = this.poseWeight * this.poseWeight * (3 - 2 * this.poseWeight)
-    for (const [boneName, childName, dir] of this.lastPose.aims) {
+    this.aim(this.lastPose, t, this.poseWeight * this.poseWeight * (3 - 2 * this.poseWeight))
+  }
+
+  /** Swings each bone of a pose toward its direction, by weight `w` (0 leaves the clip as is). */
+  private aim(pose: Pose, t: number, w: number) {
+    for (const [boneName, childName, dir] of pose.aims) {
       const bone = this.bones.get(boneName)
       const child = this.bones.get(childName)
       if (!bone || !child) continue
