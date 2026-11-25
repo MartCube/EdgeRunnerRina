@@ -92,7 +92,7 @@ const THUMB_IN = 0.85
 // chromeCurl: the chrome fingers are long, so they curl further to read as a resting hand.
 // rollRight 0: the chrome hand already hangs compact once its fan is closed; rolling it as
 // well twists the chrome fingers into a hook.
-export const HAND_TUNE = { roll: 1, rollRight: 0, spread: 1, curl: 1, chromeCurl: 1.6 }
+export const HAND_TUNE = { roll: 1, rollRight: 0, spread: 1, curl: 1, chromeCurl: 1.6, handScale: 0.84, chromeFingers: 0.8, chromeThumb: 0.65, gloveThumb: 0.8 }
 // How far the thumb side of a resting hand turns in toward her, from straight forward.
 const PALM_IN = 0.35
 
@@ -390,6 +390,7 @@ export class Rina {
       }
     }
     a.mixer.update(dt)
+    this.shrinkHands()
 
     this.root?.updateMatrixWorld(true)
     // While she stands, her arms hang relaxed at her sides instead of the export's
@@ -466,6 +467,25 @@ export class Rina {
           this.q.setFromAxisAngle(axis, HAND_TUNE.curl * curls[j - 1]! * Math.min(k, finger === 'Thumb' ? 1.4 : 3))
           this.turnWorld(bone, this.q)
         }
+      }
+    }
+  }
+
+  /**
+   * Her generated hands came out large, with long, thin chrome fingers that read as claws.
+   * The clips key every bone's scale, so each frame both hands are shrunk a little and the
+   * chrome fingers a little more.
+   */
+  private shrinkHands() {
+    for (const side of ['Left', 'Right'] as const) {
+      const hand = this.bones.get('mixamorig' + side + 'Hand')
+      if (hand) hand.scale.setScalar(HAND_TUNE.handScale)
+      if (side !== 'Right') {
+        this.bones.get('mixamorigLeftHandThumb1')?.scale.setScalar(HAND_TUNE.gloveThumb)
+        continue
+      }
+      for (const f of ['Index', 'Middle', 'Ring', 'Pinky', 'Thumb']) {
+        this.bones.get('mixamorigRightHand' + f + '1')?.scale.setScalar(f === 'Thumb' ? HAND_TUNE.chromeThumb : HAND_TUNE.chromeFingers)
       }
     }
   }
