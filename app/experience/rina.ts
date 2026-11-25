@@ -76,6 +76,25 @@ const IDLE: Pose = {
   ],
 }
 
+/** Relaxed curl per joint (knuckle, middle, tip), in radians. */
+const FINGER_CURL: [string, [number, number, number]][] = [
+  ['Index', [0, 0.18, 0.15]],
+  ['Middle', [0, 0.22, 0.18]],
+  ['Ring', [0, 0.25, 0.2]],
+  ['Pinky', [0, 0.28, 0.22]],
+  ['Thumb', [0.15, 0.1, 0.1]],
+]
+/** How much of the bind pose's finger spread is closed up, toward the middle finger. */
+const CLOSE_SPREAD = 0.7
+/** How far the thumb is brought in from sticking out, toward the line of the fingers. */
+const THUMB_IN = 0.85
+/** Tuning knobs for the hand pass (the lab renders flip these). */
+// rollRight 0: the chrome hand already hangs compact once its fan is closed; rolling it as
+// well twists the chrome fingers into a hook.
+export const HAND_TUNE = { roll: 1, rollRight: 0, spread: 1, curl: 1 }
+// How far the thumb side of a resting hand turns in toward her, from straight forward.
+const PALM_IN = 0.35
+
 const POSES: Record<'wave' | 'flex', Pose> = {
   // Chrome arm up beside her head, hand swinging side to side.
   wave: {
@@ -157,6 +176,8 @@ export class Rina {
   private gazeNow = 0
   private pose: { pose: Pose; t: number } | null = null
   private poseWeight = 0
+  /** Off only for before/after renders. */
+  curl = true
   private glitch = 0
   private nod = 0
 
@@ -375,12 +396,113 @@ export class Rina {
     // heart) take the arms back as they play.
     const want = a.current === 'wait' ? 1 : 0
     this.relax += (want - this.relax) * (1 - Math.exp(-dt * 5))
-    if (this.relax > 0.001) this.aim(IDLE, time, this.relax * this.relax * (3 - 2 * this.relax))
+    if (this.relax > 0.001) {
+      const w = this.relax * this.relax * (3 - 2 * this.relax)
+      this.aim(IDLE, time, w)
+      if (this.curl) this.rollPalms(w)
+    }
     this.applyPose(dt)
     this.applyGaze(dt, time, beat)
     this.keepHandsOut()
+    this.curlFingers(time)
     this.placeOptic(time)
   }
+
+  /**
+   * Her model was bound with its fingers straight and fanned out, and the clips keep them
+   * that way, which reads as a stiff, frozen hand. Each frame the fan is closed toward the
+   * middle finger, the thumb is brought in, and the middle and tip joints curl a little toward
+   * the palm, more toward the pinky. The flex tightens the chrome hand; the wave opens it.
+   * (Her finger bones only roughly follow the mesh, so big curls deform badly: keep them small.)
+   */
+  private curlFingers(time: number) {
+    const b = (n: string) => this.bones.get('mixamorig' + n)
+    if (!this.curl) return
+    const reacting = this.lastPose
+    for (const side of ['Left', 'Right'] as const) {
+      const hand = b(side + 'Hand')
+      const index = b(side + 'HandIndex1')
+      const pinky = b(side + 'HandPinky1')
+      if (!hand || !index || !pinky) continue
+      let k = 1 + Math.sin(time * 0.9 + (side === 'Left' ? 1.7 : 0)) * 0.06
+      if (side === 'Right' && reacting === POSES.flex) k = 1 + this.poseWeight * 0.6
+      if (side === 'Right' && reacting === POSES.wave) k = 1 - this.poseWeight * 0.55
+      const mid = b(side + 'HandMiddle1')
+      if (!mid) continue
+      // Palm normal: across the knuckles (pinky to index) crossed with the way the fingers point.
+      const across = this.f1.subVectors(index.getWorldPosition(this.f2), pinky.getWorldPosition(this.f3))
+      const along = this.f2.subVectors(mid.getWorldPosition(this.f3), hand.getWorldPosition(this.f4))
+      const palm = this.f5.crossVectors(along, across).normalize()
+      if (side === 'Right') palm.negate()
+      // Close the fan: turn each knuckle about the palm normal toward the middle finger.
+      const mid2 = b(side + 'HandMiddle2')
+      if (mid2) {
+        const dm = this.f1.subVectors(mid2.getWorldPosition(this.f1), mid.getWorldPosition(this.f3))
+        dm.addScaledVector(palm, -dm.dot(palm)).normalize()
+        for (const finger of ['Index', 'Ring', 'Pinky', 'Thumb']) {
+          const bone = b(side + 'Hand' + finger + 1)
+          const child = b(side + 'Hand' + finger + 2)
+          if (!bone || !child) continue
+          const d = this.f2.subVectors(child.getWorldPosition(this.f2), bone.getWorldPosition(this.f3))
+          d.addScaledVector(palm, -d.dot(palm))
+          if (d.lengthSq() < 1e-12) continue
+          d.normalize()
+          const angle = Math.atan2(this.f3.crossVectors(d, dm).dot(palm), d.dot(dm))
+          this.q.setFromAxisAngle(palm, angle * (finger === 'Thumb' ? THUMB_IN : CLOSE_SPREAD) * HAND_TUNE.spread)
+          this.turnWorld(bone, this.q)
+        }
+      }
+      for (const [finger, curls] of FINGER_CURL) {
+        for (let j = 1; j <= 3; j++) {
+          const bone = b(side + 'Hand' + finger + j)
+          const child = b(side + 'Hand' + finger + (j + 1))
+          if (!bone || !child) break
+          const dir = this.f2.subVectors(child.getWorldPosition(this.f3), bone.getWorldPosition(this.f4))
+          // Rotating about dir x palm swings the joint's child toward the palm.
+          const axis = this.f3.crossVectors(dir, palm)
+          if (axis.lengthSq() < 1e-12) break
+          axis.normalize()
+          this.q.setFromAxisAngle(axis, HAND_TUNE.curl * curls[j - 1]! * Math.min(k, finger === 'Thumb' ? 1.4 : 3))
+          this.turnWorld(bone, this.q)
+        }
+      }
+    }
+  }
+
+  /**
+   * While she stands, roll her forearm so the palm faces her thigh with the thumb forward,
+   * the way arms hang at rest, instead of the bind pose's palms-back.
+   */
+  private rollPalms(w: number) {
+    const b = (n: string) => this.bones.get('mixamorig' + n)
+    this.root?.getWorldQuaternion(this.pq)
+    const forward = this.f1.set(0, 0, 1).applyQuaternion(this.pq)
+    for (const side of ['Left', 'Right'] as const) {
+      const fore = b(side + 'ForeArm')
+      const hand = b(side + 'Hand')
+      const index = b(side + 'HandIndex1')
+      const pinky = b(side + 'HandPinky1')
+      if (!fore || !hand || !index || !pinky) continue
+      const axis = this.f2.subVectors(hand.getWorldPosition(this.f2), fore.getWorldPosition(this.f3)).normalize()
+      const across = this.f3.subVectors(index.getWorldPosition(this.f3), pinky.getWorldPosition(this.f4))
+      // Thumb side forward, turned a little in toward her.
+      const want = this.f4.copy(forward)
+      const inward = this.f5.set(side === 'Left' ? -1 : 1, 0, 0).applyQuaternion(this.pq)
+      want.addScaledVector(inward, PALM_IN)
+      across.addScaledVector(axis, -across.dot(axis))
+      want.addScaledVector(axis, -want.dot(axis))
+      if (across.lengthSq() < 1e-10 || want.lengthSq() < 1e-10) continue
+      across.normalize(); want.normalize()
+      const angle = Math.atan2(this.f5.crossVectors(across, want).dot(axis), across.dot(want))
+      this.q.setFromAxisAngle(axis, angle * w * HAND_TUNE.roll * (side === 'Right' ? HAND_TUNE.rollRight : 1))
+      this.turnWorld(fore, this.q)
+    }
+  }
+  private readonly f1 = new Vector3()
+  private readonly f2 = new Vector3()
+  private readonly f3 = new Vector3()
+  private readonly f4 = new Vector3()
+  private readonly f5 = new Vector3()
 
   /** Rotates a bone by a world-space rotation, on top of whatever pose it already has. */
   private turnWorld(bone: Object3D, rot: Quaternion) {
