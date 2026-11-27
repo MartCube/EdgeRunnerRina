@@ -15,7 +15,7 @@ Drop GLB files here and list them in `manifest.json`. A slot with no entry keeps
 | Slot id | What it replaces | Notes |
 | --- | --- | --- |
 | `rina` | Her 2D art on the rooftop | In use: `rina.glb`, made from `source-models/rina.glb` by `tools/rina-model`. Needs the clips `wait`, `look_around` and `heart_pose` (see `app/experience/rina.ts`). |
-| `rooftop-set` | The block AC units and parapet on her roof | In use: `rooftop.glb`, built by `tools/city/build_rooftop.py`. Kept at its own size (the roof is 50 across); the neon frame, mast and beacon stay in code. |
+| `rooftop-set` | The block AC units and parapet on her roof | In use: `rooftop.glb`, built by `tools/city/build_rooftop.py`. Kept at its own size (the roof is 50 across); the mast and beacon stay in code, and `chapters/roofdress.ts` adds the signs, halo, koi and drone. |
 | `city-kit` | Nothing; adds clutter to the street walls and roofs | In use: `city-kit.glb`, built by `tools/city/build_kit.py`. Meshes named `<piece>__<material>`; see `app/experience/chapters/city/kit.ts`. |
 | `towers` | The plain boxes on most street lots and about half the second row | In use: `towers.glb`, twelve tower designs built by `tools/city/build_towers.py`. Each is squeezed to its lot; see `app/experience/chapters/city/towers.ts`. |
 | `street-prop` | Nothing; placed at six spots on the pavement | In use: `vending.glb`, a vending machine made with Higgsfield (picture, then SAM 3 image-to-3D) and packed by `tools/higgsfield/pack-prop.mjs`. Front faces +Z. |

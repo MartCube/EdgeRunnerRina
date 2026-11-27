@@ -41,7 +41,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 .site { position: relative; --beat: 0; }
 
-.stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 
 .scanlines {
   position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0.1; mix-blend-mode: multiply;
@@ -117,9 +117,6 @@ h1, h2 { text-shadow: 3px 0 0 rgba(255, 43, 214, 0.55), -3px 0 0 rgba(0, 240, 25
 
 .caption { position: absolute; max-width: min(34rem, 100%); display: grid; gap: 0.7rem; opacity: 0; visibility: hidden; }
 .caption p:not(.mono):not(.tag) { color: var(--text); font-size: 1.05rem; max-width: 42ch; text-shadow: 0 1px 12px var(--void); }
-.caption--hero { left: var(--gutter); bottom: 14vh; visibility: visible; opacity: 1; max-width: none; }
-.caption--hero .mono, .caption--hero .lede { text-shadow: 0 0 14px var(--void), 0 0 4px var(--void); }
-.caption--hero .lede { font-size: 1.15rem; max-width: 36ch; }
 .hint { color: var(--muted); margin-top: 0.6rem; }
 .caption--left, .caption--right { padding: 1.1rem 1.3rem; background: rgba(7, 7, 12, 0.66); box-shadow: inset 0 0 0 1px var(--line); }
 .caption--left { left: var(--gutter); top: 50%; transform: translateY(-50%); }
@@ -148,6 +145,8 @@ dd { min-width: 0; }
   font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.16em;
 }
 .lock__label::before { content: ''; width: 56px; height: 2px; background: var(--cyan); }
+/* Once she is solid the dock has a Her file button, so the connect label goes. */
+.is-solid .lock__label { display: none; }
 .lock__label span { font-size: 0.7rem; color: var(--cyan); text-shadow: 0 0 10px var(--void); }
 .lock__label strong {
   padding: 0.6rem 0.9rem; font-size: 0.82rem; font-weight: 600; color: var(--text);
@@ -158,7 +157,53 @@ dd { min-width: 0; }
 @keyframes lock-in { from { opacity: 0; transform: scale(1.12); } }
 @keyframes beckon { 50% { box-shadow: inset 0 0 0 1px var(--cyan), 0 0 22px rgba(0, 240, 255, 0.7); } }
 
-.drag-hint { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); color: var(--muted); text-shadow: 0 0 10px var(--void); animation: lock-in 0.7s 1.2s both; }
+/* Her reactions, bottom centre once she has landed. */
+.dock {
+  position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  display: grid; justify-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 2 * var(--gutter));
+  animation: lock-in 0.7s 1.2s both;
+}
+.dock__hint { color: var(--muted); padding: 0.25rem 0.6rem; background: rgba(7, 7, 12, 0.6); }
+.dock__row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; animation: lock-in 0.4s both; }
+.dock__btn { display: inline-flex; align-items: center; gap: 0.45rem; color: var(--text); padding: 0.5rem 0.8rem; box-shadow: inset 0 0 0 1px rgba(0, 240, 255, 0.5); }
+.dock__btn:hover { background: var(--cyan); color: var(--void); }
+.dock__btn kbd { font: inherit; font-size: 0.6rem; padding: 0.05rem 0.3rem; color: var(--pink); box-shadow: inset 0 0 0 1px var(--pink); }
+.dock__btn:hover kbd { color: var(--void); box-shadow: inset 0 0 0 1px var(--void); }
+.dock__btn--file { color: var(--pink); box-shadow: inset 0 0 0 1px var(--pink); }
+.dock__btn--file:hover { background: var(--pink); color: #fff; }
+
+/* What she says: a holo bubble beside her head, its tail pointing at her. */
+.speech {
+  position: absolute; left: min(calc(var(--head-x, 50vw) + 56px), calc(100vw - var(--gutter-r) - 18rem)); top: var(--optic-y, 25vh);
+  max-width: 18rem; padding: 0.6rem 0.9rem 0.6rem 1.1rem; font-size: 0.95rem; line-height: 1.35; color: var(--text);
+  background: rgba(7, 7, 12, 0.84); box-shadow: inset 0 0 0 1px var(--pink), 0 0 24px rgba(255, 43, 214, 0.35);
+  clip-path: polygon(10px 0, 100% 0, 100% 100%, 10px 100%, 10px 70%, 0 50%, 10px 30%);
+  transform: translateY(-50%); animation: speech 3.2s both; z-index: 7;
+}
+@keyframes speech {
+  0% { opacity: 0; transform: translate(-10px, -50%) scale(0.92); }
+  6%, 88% { opacity: 1; transform: translate(0, -50%); }
+  100% { opacity: 0; transform: translate(6px, -50%); }
+}
+
+/* The scan callouts pinned to her optic, arm, ink and knees. */
+.scan { position: absolute; inset: 0; opacity: 0; transition: opacity 0.35s; }
+.scan.is-on { opacity: 1; }
+.callout { position: absolute; width: 0; height: 0; }
+.callout__dot { position: absolute; left: -5px; top: -5px; width: 10px; height: 10px; border: 1.5px solid var(--yellow); border-radius: 50%; box-shadow: 0 0 10px var(--yellow); }
+.callout__line { position: absolute; top: 0; height: 1px; width: 0; background: var(--yellow); transition: width 0.45s 0.1s ease-out; }
+.callout--r .callout__line { left: 6px; }
+.callout--l .callout__line { right: 6px; }
+.scan.is-on .callout__line { width: clamp(60px, 9vw, 140px); }
+.callout__text {
+  position: absolute; top: -1.15rem; display: grid; gap: 2px; white-space: nowrap; font-family: var(--mono, monospace);
+  opacity: 0; transition: opacity 0.3s 0.45s; text-shadow: 0 0 8px var(--void), 0 0 3px var(--void);
+}
+.scan.is-on .callout__text { opacity: 1; }
+.callout--r .callout__text { left: calc(clamp(60px, 9vw, 140px) + 14px); }
+.callout--l .callout__text { right: calc(clamp(60px, 9vw, 140px) + 14px); text-align: right; }
+.callout__text strong { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--yellow); }
+.callout__text span { font-size: 0.66rem; letter-spacing: 0.08em; color: var(--text); }
 
 /* The pink ring that ripples out from her on a click. */
 .pulse {
@@ -239,11 +284,24 @@ dd { min-width: 0; }
   .hud__stat { display: none; }
   .hud__id span { display: none; }
   .caption--left, .caption--right { top: auto; bottom: 14vh; transform: none; left: var(--gutter); right: auto; }
-  .caption--hero { bottom: 13vh; }
   .caption { padding-right: 1rem; }
   .lock__label { left: 50%; top: calc(100% + 14px); transform: translateX(-50%); justify-items: center; }
   .lock__label::before { display: none; }
-  .drag-hint { display: none; }
+  .dock__hint { display: none; }
+  .dock { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+  .hide-sm { display: none; }
+  .hud__tools { flex-wrap: nowrap; }
+  .chip { padding: 0.4rem 0.55rem; }
+  .speech { left: 50%; top: var(--head-y, 25vh); white-space: normal; text-align: center; width: max-content; max-width: calc(100vw - 2 * var(--gutter)); clip-path: none; padding: 0.55rem 0.8rem; transform: translate(-50%, calc(-100% - 14px)); animation-name: speech-up; }
+  @keyframes speech-up {
+    0% { opacity: 0; transform: translate(-50%, calc(-100% - 4px)) scale(0.92); }
+    6%, 88% { opacity: 1; transform: translate(-50%, calc(-100% - 14px)); }
+    100% { opacity: 0; transform: translate(-50%, calc(-100% - 20px)); }
+  }
+  .callout__text span { display: none; }
+  .scan.is-on .callout__line { width: 34px; }
+  .callout--r .callout__text { left: 46px; }
+  .callout--l .callout__text { right: 46px; }
   /* Her file becomes one sheet over the lower half, one panel at a time. */
   .file__bar { left: var(--gutter); right: var(--gutter-r); top: auto; bottom: 46vh; transform: none; justify-content: space-between; }
   .is-open .file__bar { transform: none; }
@@ -259,6 +317,6 @@ dd { min-width: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   .hud, .panel, .file__bar { transition: none; }
-  .lock, .lock__label strong, .pulse, .is-open .panel, .viewer, .drag-hint { animation: none; }
+  .lock, .lock__label strong, .pulse, .is-open .panel, .viewer, .dock, .speech { animation: none; }
   .pulse { display: none; }
 }

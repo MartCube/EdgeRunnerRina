@@ -15,6 +15,7 @@ import type { PerspectiveCamera } from 'three'
 import { HEX, col, lerp, smooth } from '../palette'
 import type { Frame, RinaView } from '../types'
 import { ROOF } from './city'
+import { RoofDress } from './roofdress'
 
 /** Height of the figure in scene units. */
 export const TALL = 9.4
@@ -37,7 +38,8 @@ export class RooftopChapter {
   readonly card: Mesh
   private readonly figure: ShaderMaterial
   private readonly beacon: MeshBasicMaterial
-  private readonly frame: MeshBasicMaterial
+  /** Pad, halo, signs, koi, drone, traffic and her lights: see roofdress.ts. */
+  readonly dress = new RoofDress()
 
   constructor(onLoad: () => void) {
     const top = ROOF.y
@@ -75,28 +77,7 @@ export class RooftopChapter {
     lamp.position.set(ROOF.x + 17, top + 20.3, ROOF.z + 8)
     this.fixtures.add(mast, lamp)
 
-    // The neon frame behind her.
-    this.frame = new MeshBasicMaterial({ color: col(HEX.pink, 1.7) })
-    const sign = new Group()
-    for (const [x, y, w, h] of [
-      [0, 6.1, 15, 0.28],
-      [0, -6.1, 15, 0.28],
-      [-7.4, 0, 0.28, 12.4],
-      [7.4, 0, 0.28, 12.4],
-    ] as const) {
-      const bar = new Mesh(new BoxGeometry(w, h, 0.28), this.frame)
-      bar.position.set(x, y, 0)
-      sign.add(bar)
-    }
-    sign.position.set(ROOF.x + 2.5, top + 9.4, ROOF.z + 11)
-    this.fixtures.add(sign)
-    for (const x of [-4, 9]) {
-      const post = new Mesh(new BoxGeometry(0.35, 3.4, 0.35), flat(0x1a1a28))
-      post.position.set(ROOF.x + x, top + 1.7, ROOF.z + 11)
-      this.fixtures.add(post)
-    }
-
-    this.group.add(this.furniture, this.fixtures)
+    this.group.add(this.furniture, this.fixtures, this.dress.group)
     this.setHolder.position.set(ROOF.x, top, ROOF.z)
     this.figureHolder.position.set(ROOF.x, top, ROOF.z + 18)
     this.group.add(this.setHolder, this.figureHolder)
@@ -147,7 +128,7 @@ export class RooftopChapter {
     // A tall screen needs more distance to fit her in.
     const wide = smooth(0.9, 1.5, camera.aspect)
     const stand = lerp(15.5, 11.5, e) * lerp(1.5, 1, wide) + v.link * lerp(4, 1.5, wide)
-    const dist = lerp(stand, v.partDist, v.zoom)
+    const dist = lerp(stand * v.dolly, v.partDist, v.zoom)
     const feetY = this.focus.y - TALL * 0.52
     target.set(
       this.focus.x + v.partX * v.zoom,
@@ -155,10 +136,15 @@ export class RooftopChapter {
       lerp(this.focus.y - v.link * (1 - wide) * 3.4, feetY + TALL * v.partY, v.zoom),
       this.focus.z,
     )
+    // Orbit goes all the way round her; tilt lifts the camera over her. Both fade out while
+    // the camera is moved in on one of her parts.
+    const tilt = v.tilt * (1 - v.zoom)
+    const flat = Math.cos(tilt) * dist
+    const sway = 1 - Math.min(1, Math.abs(v.tilt) * 2 + v.zoom * 0.6)
     camera.position.set(
-      target.x + Math.sin(v.orbit) * dist + f.pointer.x * 1.3 * (1 - v.zoom * 0.6),
-      target.y + lerp(1.4, 0.3, e) * (1 - v.zoom) + f.pointer.y * 0.6 * (1 - v.zoom * 0.6),
-      target.z + Math.cos(v.orbit) * dist,
+      target.x + Math.sin(v.orbit) * flat + Math.cos(v.orbit) * f.pointer.x * 1.3 * sway,
+      Math.max(feetY + 0.6, target.y + Math.sin(tilt) * dist + lerp(1.4, 0.3, e) * (1 - v.zoom) + f.pointer.y * 0.6 * sway),
+      target.z + Math.cos(v.orbit) * flat - Math.sin(v.orbit) * f.pointer.x * 1.3 * sway,
     )
   }
 
@@ -166,6 +152,6 @@ export class RooftopChapter {
     this.figure.uniforms.uScan!.value = smooth(0.06, 0.55, p)
     this.figure.uniforms.uTime!.value = f.time
     this.beacon.color.copy(col(HEX.pink, f.beatIndex % 2 ? 0.5 : 2.4))
-    this.frame.color.copy(col(HEX.pink, 1.5 + f.beat * 0.7 + f.level))
+    this.dress.update(f)
   }
 }

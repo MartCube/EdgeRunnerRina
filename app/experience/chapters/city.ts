@@ -744,8 +744,9 @@ export class CityChapter {
    * wrapped four times round a cylinder well beyond the towers. Its black sky adds nothing,
    * so only the lit city shows, and it sinks into the glowing fog at the horizon.
    */
-  loadSkyline(lite: boolean) {
-    new TextureLoader().load(`img/skyline${lite ? '-lite' : ''}.webp`, (tex) => {
+  /** Loads the skyline painting; resolves once it is in the scene, or failed to load. */
+  loadSkyline(lite: boolean): Promise<void> {
+    return new Promise((done) => new TextureLoader().load(`img/skyline${lite ? '-lite' : ''}.webp`, (tex) => {
       tex.colorSpace = SRGBColorSpace
       tex.wrapS = MirroredRepeatWrapping
       tex.repeat.set(4, 1)
@@ -777,7 +778,8 @@ export class CityChapter {
       band.renderOrder = -9
       band.frustumCulled = false
       this.group.add(band)
-    })
+      done()
+    }, undefined, () => done()))
   }
 
   /** Hangs the Blender facade kit (public/models/city-kit.glb) on the street walls. */

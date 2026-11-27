@@ -66,8 +66,8 @@ export class Props {
    *                  model's own size and origin (sets built to scale, like the rooftop).
    * @param placeholder  Hidden once the model is in.
    */
-  fill(id: SlotId, holder: Object3D, height: number | null, placeholder?: Object3D) {
-    void this.load(id).then((gltf) => {
+  fill(id: SlotId, holder: Object3D, height: number | null, placeholder?: Object3D): Promise<void> {
+    return this.load(id).then((gltf) => {
       if (!gltf) return
       holder.add(height === null ? gltf.scene : fit(gltf.scene, height))
       if (placeholder) placeholder.visible = false

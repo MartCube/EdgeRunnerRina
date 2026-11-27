@@ -10,8 +10,12 @@ export interface Progress {
 export interface RinaView {
   /** 0 to 1, how far her file is open. The camera steps back to make room for the panels. */
   link: number
-  /** Radians the visitor has dragged the camera around her. */
+  /** Radians the visitor has dragged the camera around her; any amount, all the way round. */
   orbit: number
+  /** Radians the camera is raised above her (negative looks up at her from low down). */
+  tilt: number
+  /** Distance multiplier from the mouse wheel or a pinch: below 1 is closer. */
+  dolly: number
   /** 0 to 1, how far the camera has moved in on one part of her. */
   zoom: number
   /** The part being looked at: height as a share of hers, sideways offset and distance in scene units. */

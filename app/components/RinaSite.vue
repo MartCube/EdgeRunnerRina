@@ -4,12 +4,15 @@ import gsap from 'gsap'
 import type { Experience } from '../experience/Experience'
 import { BPM } from '../experience/audio'
 import type { Stage } from '../experience/types'
+import type { Reaction } from '../experience/rina'
 import BootScreen from './BootScreen.vue'
 import RinaPanels, { type Part } from './RinaPanels.vue'
 
 /** Seconds the flight takes from the skyline to her roof, and the landing after it. */
 const FLIGHT = 10.5
 const LANDING = 2.6
+/** Seconds the city is held on screen after Enter before the flight starts by itself. */
+const HOLD = 1.5
 
 const LABELS: Record<Stage, string> = {
   boot: 'Standby',
@@ -31,13 +34,38 @@ const pulse = ref(0)
 const label = ref('STANDBY')
 const clock = ref('')
 const touch = ref(false)
+/** What she is saying, and a key that restarts the bubble's animation for each new line. */
+const speech = ref('')
+const speechKey = ref(0)
+/** The scan callouts on her parts: shown while pointed at, and for a few seconds after landing. */
+const scanning = ref(false)
+const showScan = computed(() => stage.value === 'landed' && (hover.value || scanning.value))
+let speechTimer = 0
+let scanTimer = 0
+let greetTimer = 0
+let reactionTurn = 0
+
+/** Her reactions: the buttons in the dock, and what she says when she does each one. */
+const REACTIONS: { id: Reaction; label: string; key: string; lines: string[] }[] = [
+  { id: 'wave', label: 'Wave', key: '1', lines: ['Hey, choom. Over here.', 'Yeah, I see you.', 'You lost? This roof is mine.'] },
+  { id: 'flex', label: 'Chrome arm', key: '2', lines: ['Full chrome. Paid in cash.', 'This arm has never dropped a package.', 'Polished it this morning.'] },
+  { id: 'heart', label: 'Heart', key: '3', lines: ['Delivered with love. Mostly.', "Don't make it weird.", 'Five stars, right?'] },
+  { id: 'look', label: 'Look around', key: '4', lines: ['Corpo drones up there. Stay low.', "Rain's not stopping tonight.", 'Something is watching this roof.'] },
+  { id: 'glitch', label: 'Glitch', key: '5', lines: ['Ugh. My optic is lagging.', 'Signal is dirty tonight.', 'Who is pinging me?'] },
+]
+const CALLOUTS = [
+  { id: 'optic', side: 'r', title: 'Left optic', note: 'RM-OS 3.7 / tracking you' },
+  { id: 'tattoo', side: 'r', title: 'Sakura ink', note: 'Left shoulder' },
+  { id: 'arm', side: 'l', title: 'Chrome arm', note: 'Right, full replacement' },
+  { id: 'knee', side: 'l', title: 'Knee servos', note: 'Both legs / jump assist' },
+] as const
 
 let exp: Experience | undefined
 let flight: gsap.core.Timeline | undefined
 let captions: { el: HTMLElement; from: number; to: number }[] = []
 let clockTimer = 0
 let scrambleTimer = 0
-let touchY = 0
+let holdTimer = 0
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const stageNumber = computed(() => (stage.value === 'landed' || stage.value === 'linked' ? '02' : '01'))
@@ -64,15 +92,20 @@ function scrambleTo(text: string) {
     if (step / 2 >= text.length) clearInterval(scrambleTimer)
   }, 28)
 }
+/** Becomes true once she has been materialised; the dock of reactions shows from then on. */
+const solidSeen = ref(false)
 watch(stage, (s) => {
+  if (s === 'linked') solidSeen.value = true
   scrambleTo(LABELS[s].toUpperCase())
   if (!exp) return
   exp.hoverable = s === 'landed'
   exp.steady(s === 'linked')
 })
 
+/** Enter shows the city for a moment, then the camera flies itself to her roof. */
 async function enter(withSound: boolean) {
   stage.value = 'idle'
+  holdTimer = window.setTimeout(startFlight, reduced() ? 0 : HOLD * 1000)
   if (withSound) sound.value = (await exp?.audio.start()) ?? false
 }
 
@@ -91,8 +124,8 @@ function toggleLite() {
   exp?.setLite(lite.value)
 }
 
-/** The first scroll starts the flight; from there the camera flies itself to her roof. */
 function startFlight() {
+  clearTimeout(holdTimer)
   if (stage.value !== 'idle' || !exp) return
   stage.value = 'flight'
   const p = exp.progress
@@ -111,31 +144,84 @@ function land() {
   stage.value = 'landed'
   if (exp) exp.interactive = true
   sync()
+  // She notices the camera: a wave, a line, and her parts get scanned.
+  greetTimer = window.setTimeout(() => {
+    exp?.react('wave')
+    say('Took you long enough, choom.')
+    scan(4.5)
+  }, 500)
+}
+
+/** Shows a line over her head. The bubble's own animation (3.2 s) clears it; the timer is a backstop. */
+function say(text: string) {
+  speech.value = text
+  speechKey.value++
+  clearTimeout(speechTimer)
+  speechTimer = window.setTimeout(() => (speech.value = ''), 8000)
+}
+
+function scan(seconds: number) {
+  scanning.value = true
+  clearTimeout(scanTimer)
+  scanTimer = window.setTimeout(() => (scanning.value = false), seconds * 1000)
+}
+
+/** One of her reactions, from the dock, a key, or a click on her once she is solid. */
+function react(id: Reaction) {
+  if (!exp || (stage.value !== 'landed' && stage.value !== 'linked')) return
+  const r = REACTIONS.find((x) => x.id === id)!
+  exp.react(id)
+  say(r.lines[Math.floor(Math.random() * r.lines.length)]!)
+  if (id === 'glitch') pulse.value++
 }
 
 function replay() {
   if (!exp || !flight) return
   closeFile()
+  clearTimeout(greetTimer)
+  speech.value = ''
+  scanning.value = false
+  solidSeen.value = false
   exp.interactive = false
   exp.dissolve()
-  gsap.to(exp.view, { orbit: 0, duration: 0.3 })
+  gsap.to(exp.resetView(), { orbit: 0, tilt: 0, dolly: 1, duration: 0.3 })
   hover.value = false
   stage.value = 'flight'
   flight.restart()
 }
 
-/** Clicking her: the heart pose, a pulse, and her file opens around her. */
+/**
+ * Clicking her. The first time: the heart pose, she materialises, and her file opens around
+ * her. Once she is solid, each click plays her next reaction instead.
+ */
 function pick() {
   pulse.value++
-  if (stage.value !== 'landed' || !exp) return
-  stage.value = 'linked'
-  gsap.to(exp.view, { link: 1, orbit: 0, duration: 0.9, ease: 'power2.out' })
+  if (!exp) return
+  if (exp.rinaSolid) {
+    if (exp.rinaBusy) return
+    const order: Reaction[] = ['wave', 'flex', 'glitch', 'heart', 'look']
+    react(order[reactionTurn++ % order.length]!)
+    return
+  }
+  exp.heart()
+  say('Signal locked. Hi.')
+  openFile()
 }
 
-/** The label beside her does the same as clicking her, for keyboards and anyone who misses her. */
+function openFile() {
+  if (stage.value !== 'landed' || !exp) return
+  stage.value = 'linked'
+  gsap.to(exp.resetView(), { link: 1, orbit: 0, tilt: 0, dolly: 1, duration: 0.9, ease: 'power2.out' })
+}
+
+/** The label beside her: materialises her the first time, and always opens her file. */
 function connect() {
-  exp?.heart()
-  pick()
+  if (exp && !exp.rinaSolid) {
+    exp.heart()
+    say('Signal locked. Hi.')
+  }
+  pulse.value++
+  openFile()
 }
 
 function closeFile() {
@@ -153,24 +239,18 @@ function focus(part: Part | null) {
     return
   }
   exp.settle()
-  gsap.to(v, { zoom: 1, partY: part.y, partX: part.x, partDist: part.dist, orbit: 0, duration: 0.9, ease: 'power2.inOut' })
+  exp.resetView()
+  gsap.to(v, { tilt: 0, dolly: 1, zoom: 1, partY: part.y, partX: part.x, partDist: part.dist, orbit: 0, duration: 0.9, ease: 'power2.inOut' })
 }
 
-const onWheel = (e: WheelEvent) => {
-  if (e.deltaY > 0) startFlight()
-}
-const onTouchStart = (e: TouchEvent) => (touchY = e.touches[0]?.clientY ?? 0)
-const onTouchMove = (e: TouchEvent) => {
-  if (touchY - (e.touches[0]?.clientY ?? touchY) > 14) startFlight()
-}
 const onKey = (e: KeyboardEvent) => {
   if (e.key === 'Escape') closeFile()
-  if (stage.value !== 'idle' || e.target instanceof HTMLButtonElement) return
-  if (['ArrowDown', 'PageDown', ' ', 'Enter'].includes(e.key)) startFlight()
+  const r = REACTIONS.find((x) => x.key === e.key)
+  if (r && stage.value === 'landed' && exp?.rinaSolid) react(r.id)
 }
 
 onMounted(async () => {
-  // The page itself never scrolls: one scroll gesture starts the flight.
+  // The page itself never scrolls: the flight runs by itself once the visitor enters.
   document.documentElement.classList.add('is-locked')
   const tick = () => (clock.value = new Date().toLocaleTimeString([], { hour12: false }))
   tick()
@@ -191,9 +271,6 @@ onMounted(async () => {
   }))
   sync()
 
-  addEventListener('wheel', onWheel, { passive: true })
-  addEventListener('touchstart', onTouchStart, { passive: true })
-  addEventListener('touchmove', onTouchMove, { passive: true })
   addEventListener('keydown', onKey)
 
   // Let the boot screen paint first, then fetch and start the 3D engine (three.js lives in
@@ -221,10 +298,11 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   clearInterval(clockTimer)
   clearInterval(scrambleTimer)
+  clearTimeout(holdTimer)
+  clearTimeout(speechTimer)
+  clearTimeout(scanTimer)
+  clearTimeout(greetTimer)
   flight?.kill()
-  removeEventListener('wheel', onWheel)
-  removeEventListener('touchstart', onTouchStart)
-  removeEventListener('touchmove', onTouchMove)
   removeEventListener('keydown', onKey)
   exp?.dispose()
   document.documentElement.classList.remove('is-locked')
@@ -232,7 +310,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="site" :class="[`is-${stage}`, { 'is-booted': stage !== 'boot', 'is-lite': lite }]">
+  <div ref="root" class="site" :class="[`is-${stage}`, { 'is-booted': stage !== 'boot', 'is-lite': lite, 'is-solid': solidSeen }]">
     <canvas ref="canvas" class="stage" aria-hidden="true" />
     <div class="scanlines" aria-hidden="true" />
 
@@ -247,7 +325,7 @@ onBeforeUnmount(() => {
       <div class="hud__tools">
         <span class="hud__stat"><i class="beat" />{{ BPM }} BPM</span>
         <span class="hud__stat hud__stat--clock">LOCAL {{ clock }}</span>
-        <button v-if="stage === 'landed'" id="replay" class="chip" type="button" @click="replay">Replay flight</button>
+        <button v-if="stage === 'landed'" id="replay" class="chip" type="button" @click="replay">Replay<span class="hide-sm"> flight</span></button>
         <button id="toggle-sound" class="chip" type="button" :aria-pressed="sound" @click="toggleSound">
           Sound {{ sound ? 'on' : 'off' }}
         </button>
@@ -264,14 +342,6 @@ onBeforeUnmount(() => {
 
     <main class="overlay">
       <!-- The flight: captions keyed to how far along it is. -->
-      <div class="caption caption--hero" data-from="0" data-to="0.08">
-        <p class="mono">DISTRICT 7 / 02:14</p>
-        <h1>Rina Manda</h1>
-        <p class="lede">Cyborg street courier. She is waiting on a rooftop across the city.</p>
-        <button v-if="stage === 'idle'" id="start" class="btn btn--main" type="button" @click="startFlight">
-          {{ touch ? 'Swipe up to find her' : 'Scroll to find her' }}
-        </button>
-      </div>
       <div class="caption caption--left" data-from="0.16" data-to="0.33">
         <p class="mono">SIGNAL RM-01 / RAIN / 2.4 KM</p>
         <h2>District 7 never closes</h2>
@@ -294,7 +364,28 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <i v-if="pulse" :key="pulse" class="pulse" aria-hidden="true" />
-      <p v-if="stage === 'landed'" class="mono drag-hint">Drag to look around her</p>
+
+      <!-- Her scan: labels on her optic, chrome arm, ink and knees, pinned to the model. -->
+      <div class="scan" :class="{ 'is-on': showScan }" aria-hidden="true">
+        <div v-for="c in CALLOUTS" :key="c.id" class="callout" :class="`callout--${c.side}`" :style="{ left: `var(--${c.id}-x)`, top: `var(--${c.id}-y)` }">
+          <i class="callout__dot" /><i class="callout__line" />
+          <p class="callout__text"><strong>{{ c.title }}</strong><span>{{ c.note }}</span></p>
+        </div>
+      </div>
+
+      <!-- What she says, over her head. -->
+      <p v-if="speech && (stage === 'landed' || stage === 'linked')" :key="speechKey" class="speech" role="status" @animationend="speech = ''">{{ speech }}</p>
+
+      <!-- Reactions: once she is solid, the dock (or keys 1 to 5, or clicking her) plays one. -->
+      <div v-if="stage === 'landed'" class="dock">
+        <p class="mono dock__hint">{{ solidSeen ? (touch ? 'Tap her, or pick one' : 'Click her, press 1 to 5, or pick one. Drag to spin around her') : (touch ? 'Drag to spin around her, pinch to zoom' : 'Drag to spin around her, scroll to zoom') }}</p>
+        <div v-if="solidSeen" class="dock__row">
+          <button v-for="r in REACTIONS" :key="r.id" class="chip dock__btn" type="button" @click="react(r.id)">
+            <kbd v-if="!touch">{{ r.key }}</kbd>{{ r.label }}
+          </button>
+          <button class="chip dock__btn dock__btn--file" type="button" @click="openFile">Her file</button>
+        </div>
+      </div>
 
       <RinaPanels :open="stage === 'linked'" @close="closeFile" @focus="focus" />
     </main>
