@@ -170,7 +170,12 @@ dd { min-width: 0; }
 .dock__btn kbd { font: inherit; font-size: 0.6rem; padding: 0.05rem 0.3rem; color: var(--pink); box-shadow: inset 0 0 0 1px var(--pink); }
 .dock__btn:hover kbd { color: var(--void); box-shadow: inset 0 0 0 1px var(--void); }
 .dock__btn--file { color: var(--pink); box-shadow: inset 0 0 0 1px var(--pink); }
-.dock__btn--file:hover { background: var(--pink); color: #fff; }
+.dock__btn--file:hover, .dock__btn--file[aria-pressed='true'] { background: var(--pink); color: #fff; box-shadow: none; }
+.dock__sep { width: 1px; align-self: stretch; margin: 0 4px; background: rgba(255, 43, 214, 0.5); }
+/* Her file shows one panel at a time, picked in the dock; the sheets strip sits above the dock. */
+.file .panel { display: none; }
+.tab-file .panel--file, .tab-parts .panel--parts, .tab-sheets .panel--sheets { display: grid; }
+.panel--sheets { bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 
 /* What she says: a holo bubble beside her head, its tail pointing at her. */
 .speech {
@@ -313,6 +318,8 @@ dd { min-width: 0; }
   .panel--sheets ul { flex-wrap: wrap; overflow: visible; }
   .sheet img { width: 9rem; height: 5.6rem; }
   .is-linked .hud--bottom { display: none; }
+  .is-linked .dock { display: none; }
+  .dock__sep { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
