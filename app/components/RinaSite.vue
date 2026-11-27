@@ -1,54 +1,80 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import gsap from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { Experience } from '../experience/Experience'
+import type { Experience } from '../experience/Experience'
 import { BPM } from '../experience/audio'
-import { CHAPTERS, type ChapterId, type Progress } from '../experience/types'
+import type { Stage } from '../experience/types'
+import type { Reaction } from '../experience/rina'
 import BootScreen from './BootScreen.vue'
-import CyberwarePanel from './CyberwarePanel.vue'
-import DeliveryReceipt from './DeliveryReceipt.vue'
+import RinaPanels, { type Part, type Section } from './RinaPanels.vue'
 
-const WAYPOINTS: Record<ChapterId, string> = {
-  run: 'The run',
-  rina: 'Rina',
-  ware: 'Cyberware',
-  delivered: 'Delivered',
+/** Seconds the flight takes from the skyline to her roof, and the landing after it. */
+const FLIGHT = 10.5
+const LANDING = 2.6
+/** Seconds the city is held on screen after Enter before the flight starts by itself. */
+const HOLD = 1.5
+
+const LABELS: Record<Stage, string> = {
+  boot: 'Standby',
+  idle: 'District 7',
+  flight: 'Inbound',
+  landed: 'Rina',
+  linked: 'Linked',
 }
 
 const root = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
-const sections = reactive<Partial<Record<ChapterId, HTMLElement>>>({})
-const booted = ref(false)
+const stage = ref<Stage>('boot')
 const ready = ref(false)
 const failed = ref(false)
 const sound = ref(false)
 const lite = ref(false)
-const chapter = ref<ChapterId>('run')
-const label = ref('THE RUN')
-const route = ref(0)
+const hover = ref(false)
+const pulse = ref(0)
+const label = ref('STANDBY')
 const clock = ref('')
-const signed = ref(false)
+const touch = ref(false)
+/** What she is saying, and a key that restarts the bubble's animation for each new line. */
+const speech = ref('')
+const speechKey = ref(0)
+/** The scan callouts on her parts: shown while pointed at, and for a few seconds after landing. */
+const scanning = ref(false)
+const showScan = computed(() => stage.value === 'landed' && (hover.value || scanning.value))
+let speechTimer = 0
+let scanTimer = 0
+let greetTimer = 0
+let reactionTurn = 0
+
+/** Her reactions: the buttons in the dock, and what she says when she does each one. */
+const REACTIONS: { id: Reaction; label: string; key: string; lines: string[] }[] = [
+  { id: 'wave', label: 'Wave', key: '1', lines: ['Hey, choom. Over here.', 'Yeah, I see you.', 'You lost? This roof is mine.'] },
+  { id: 'flex', label: 'Chrome arm', key: '2', lines: ['Full chrome. Paid in cash.', 'This arm has never dropped a package.', 'Polished it this morning.'] },
+  { id: 'heart', label: 'Heart', key: '3', lines: ['Delivered with love. Mostly.', "Don't make it weird.", 'Five stars, right?'] },
+  { id: 'look', label: 'Look around', key: '4', lines: ['Corpo drones up there. Stay low.', "Rain's not stopping tonight.", 'Something is watching this roof.'] },
+  { id: 'glitch', label: 'Glitch', key: '5', lines: ['Ugh. My optic is lagging.', 'Signal is dirty tonight.', 'Who is pinging me?'] },
+]
+const CALLOUTS = [
+  { id: 'optic', side: 'r', title: 'Left optic', note: 'RM-OS 3.7 / tracking you' },
+  { id: 'tattoo', side: 'r', title: 'Sakura ink', note: 'Left shoulder' },
+  { id: 'arm', side: 'l', title: 'Chrome arm', note: 'Right, full replacement' },
+  { id: 'knee', side: 'l', title: 'Knee servos', note: 'Both legs / jump assist' },
+] as const
 
 let exp: Experience | undefined
-let triggers: ScrollTrigger[] = []
-let captions: { el: HTMLElement; ch: keyof Progress; from: number; to: number }[] = []
+let flight: gsap.core.Timeline | undefined
+let captions: { el: HTMLElement; from: number; to: number }[] = []
 let clockTimer = 0
 let scrambleTimer = 0
+let holdTimer = 0
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches
 
-const chapterNumber = computed(() => String(CHAPTERS.indexOf(chapter.value) + 1).padStart(2, '0'))
+const stageNumber = computed(() => (stage.value === 'landed' || stage.value === 'linked' ? '02' : '01'))
 
+/** Captions fade in and out over a short stretch at each end of their range of the flight. */
 function sync() {
   if (!exp) return
-  const p = exp.progress
-  const next: ChapterId = p.run < 1 ? 'run' : p.ware < 0.5 ? 'rina' : p.delivered < 0.5 ? 'ware' : 'delivered'
-  if (next !== chapter.value) chapter.value = next
-  const max = document.documentElement.scrollHeight - innerHeight
-  route.value = max > 0 ? Math.round((scrollY / max) * 100) : 0
-  root.value?.style.setProperty('--route', String(route.value / 100))
-  // Captions fade in and out over a short stretch at each end of their range.
+  const v = exp.progress.run
   for (const c of captions) {
-    const v = p[c.ch]
     const edge = 0.035
     const o = Math.min(c.from === 0 ? 1 : (v - c.from) / edge, (c.to - v) / edge)
     c.el.style.opacity = String(Math.max(0, Math.min(1, o)))
@@ -66,11 +92,28 @@ function scrambleTo(text: string) {
     if (step / 2 >= text.length) clearInterval(scrambleTimer)
   }, 28)
 }
-watch(chapter, (c) => scrambleTo(WAYPOINTS[c].toUpperCase()))
+/** Becomes true once she has been materialised; the dock of reactions shows from then on. */
+const solidSeen = ref(false)
+/** Which panel of her file is showing while it is open. */
+const section = ref<Section>('file')
+/** Her file, as buttons in the dock next to her moves. */
+const FILE_BUTTONS: { id: Section; label: string }[] = [
+  { id: 'file', label: 'Her file' },
+  { id: 'parts', label: 'Cyberware' },
+  { id: 'sheets', label: 'Sheets' },
+]
+watch(stage, (s) => {
+  if (s === 'linked') solidSeen.value = true
+  scrambleTo(LABELS[s].toUpperCase())
+  if (!exp) return
+  exp.hoverable = s === 'landed'
+  exp.steady(s === 'linked')
+})
 
+/** Enter shows the city for a moment, then the camera flies itself to her roof. */
 async function enter(withSound: boolean) {
-  booted.value = true
-  document.documentElement.classList.remove('is-locked')
+  stage.value = 'idle'
+  holdTimer = window.setTimeout(startFlight, reduced() ? 0 : HOLD * 1000)
   if (withSound) sound.value = (await exp?.audio.start()) ?? false
 }
 
@@ -89,19 +132,142 @@ function toggleLite() {
   exp?.setLite(lite.value)
 }
 
-function goTo(id: ChapterId) {
-  const el = sections[id]
-  if (!el) return
-  // The last two chapters are read at their top edge; the rest start a little way in.
-  const y = el.getBoundingClientRect().top + scrollY + (id === 'rina' ? innerHeight * 0.4 : 0)
-  scrollTo({ top: y, behavior: 'smooth' })
+function startFlight() {
+  clearTimeout(holdTimer)
+  if (stage.value !== 'idle' || !exp) return
+  stage.value = 'flight'
+  const p = exp.progress
+  flight = gsap
+    .timeline({ onUpdate: sync, onComplete: land })
+    .to(p, { run: 1, duration: FLIGHT, ease: 'sine.inOut' })
+    .to(p, { rina: 0.75, duration: LANDING, ease: 'power2.out' })
+  if (reduced()) flight.progress(1)
 }
 
-onMounted(() => {
+function skip() {
+  flight?.progress(1)
+}
+
+function land() {
+  stage.value = 'landed'
+  if (exp) exp.interactive = true
+  sync()
+  // She notices the camera: a wave, a line, and her parts get scanned.
+  greetTimer = window.setTimeout(() => {
+    exp?.react('wave')
+    say('Took you long enough, choom.')
+    scan(4.5)
+  }, 500)
+}
+
+/** Shows a line over her head. The bubble's own animation (3.2 s) clears it; the timer is a backstop. */
+function say(text: string) {
+  speech.value = text
+  speechKey.value++
+  clearTimeout(speechTimer)
+  speechTimer = window.setTimeout(() => (speech.value = ''), 8000)
+}
+
+function scan(seconds: number) {
+  scanning.value = true
+  clearTimeout(scanTimer)
+  scanTimer = window.setTimeout(() => (scanning.value = false), seconds * 1000)
+}
+
+/** One of her reactions, from the dock, a key, or a click on her once she is solid. */
+function react(id: Reaction) {
+  if (!exp || (stage.value !== 'landed' && stage.value !== 'linked')) return
+  const r = REACTIONS.find((x) => x.id === id)!
+  exp.react(id)
+  say(r.lines[Math.floor(Math.random() * r.lines.length)]!)
+  if (id === 'glitch') pulse.value++
+}
+
+function replay() {
+  if (!exp || !flight) return
+  closeFile()
+  clearTimeout(greetTimer)
+  speech.value = ''
+  scanning.value = false
+  solidSeen.value = false
+  exp.interactive = false
+  exp.dissolve()
+  gsap.to(exp.resetView(), { orbit: 0, tilt: 0, dolly: 1, duration: 0.3 })
+  hover.value = false
+  stage.value = 'flight'
+  flight.restart()
+}
+
+/**
+ * Clicking her. The first time: the heart pose and she materialises; her moves and file
+ * then show as buttons in the dock. Once she is solid, each click plays her next reaction.
+ */
+function pick() {
+  pulse.value++
+  if (!exp) return
+  if (exp.rinaSolid) {
+    if (exp.rinaBusy) return
+    const order: Reaction[] = ['wave', 'flex', 'glitch', 'heart', 'look']
+    react(order[reactionTurn++ % order.length]!)
+    return
+  }
+  exp.heart()
+  solidSeen.value = true
+  say('Signal locked. Pick something below.')
+}
+
+/** Opens one panel of her file from the dock; the same button again closes it. */
+function openSection(s: Section) {
+  if (!exp || (stage.value !== 'landed' && stage.value !== 'linked')) return
+  if (stage.value === 'linked' && section.value === s) return closeFile()
+  section.value = s
+  if (stage.value === 'linked') return
+  stage.value = 'linked'
+  gsap.to(exp.resetView(), { link: 1, orbit: 0, tilt: 0, dolly: 1, duration: 0.9, ease: 'power2.out' })
+}
+
+/** The label beside her: materialises her; her file is then in the dock. */
+function connect() {
+  if (exp && !exp.rinaSolid) {
+    exp.heart()
+    solidSeen.value = true
+    say('Signal locked. Pick something below.')
+  }
+  pulse.value++
+}
+
+function closeFile() {
+  if (stage.value !== 'linked' || !exp) return
+  stage.value = 'landed'
+  gsap.to(exp.view, { link: 0, zoom: 0, duration: 0.8, ease: 'power2.inOut' })
+}
+
+/** Moves the camera in on one part of her, or back out when the part is deselected. */
+function focus(part: Part | null) {
+  if (!exp) return
+  const v = exp.view
+  if (!part) {
+    gsap.to(v, { zoom: 0, duration: 0.8, ease: 'power2.inOut' })
+    return
+  }
+  exp.settle()
+  exp.resetView()
+  gsap.to(v, { tilt: 0, dolly: 1, zoom: 1, partY: part.y, partX: part.x, partDist: part.dist, orbit: 0, duration: 0.9, ease: 'power2.inOut' })
+}
+
+const onKey = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') closeFile()
+  const r = REACTIONS.find((x) => x.key === e.key)
+  if (r && (stage.value === 'landed' || stage.value === 'linked') && exp?.rinaSolid) react(r.id)
+}
+
+onMounted(async () => {
+  // The page itself never scrolls: the flight runs by itself once the visitor enters.
   document.documentElement.classList.add('is-locked')
   const tick = () => (clock.value = new Date().toLocaleTimeString([], { hour12: false }))
   tick()
   clockTimer = window.setInterval(tick, 1000)
+  touch.value = matchMedia('(pointer: coarse)').matches
 
   // Phones and weak machines start in lite mode; the HUD toggle overrides it.
   const nav = navigator as Navigator & { deviceMemory?: number }
@@ -110,71 +276,68 @@ onMounted(() => {
   const forced = new URLSearchParams(location.search).get('lite')
   if (forced !== null) lite.value = forced !== '0'
 
-  try {
-    exp = new Experience({ canvas: canvas.value!, root: root.value!, lite: lite.value, onReady: () => (ready.value = true) })
-  } catch {
-    failed.value = true
-    ready.value = true
-  }
-
-  gsap.registerPlugin(ScrollTrigger)
-  const bind = (id: ChapterId, start: string, end: string) => {
-    triggers.push(
-      ScrollTrigger.create({
-        trigger: sections[id],
-        start,
-        end,
-        onUpdate: (self) => {
-          if (exp) exp.progress[id] = self.progress
-          sync()
-        },
-        onRefresh: (self) => {
-          if (exp) exp.progress[id] = self.progress
-          sync()
-        },
-      }),
-    )
-  }
-  bind('run', 'top top', 'bottom top')
-  bind('rina', 'top top', 'bottom top')
-  bind('ware', 'top bottom', 'top top')
-  bind('delivered', 'top bottom', 'top top')
-
-  captions = [...root.value!.querySelectorAll<HTMLElement>('[data-ch]')].map((el) => ({
+  captions = [...root.value!.querySelectorAll<HTMLElement>('[data-from]')].map((el) => ({
     el,
-    ch: el.dataset.ch as keyof Progress,
     from: Number(el.dataset.from),
     to: Number(el.dataset.to),
   }))
   sync()
+
+  addEventListener('keydown', onKey)
+
+  // Let the boot screen paint first, then fetch and start the 3D engine (three.js lives in
+  // its own chunk). Building the city compiles shaders, which would otherwise hold the
+  // first frame and leave the screen black.
+  await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+  try {
+    const { Experience } = await import('../experience/Experience')
+    exp = new Experience({
+      canvas: canvas.value!,
+      root: root.value!,
+      lite: lite.value,
+      onReady: () => (ready.value = true),
+      onHover: (over) => (hover.value = over),
+      onPick: pick,
+    })
+    // A handle for poking at the scene from the browser console while developing.
+    if (import.meta.dev) Object.assign(window, { __exp: exp })
+  } catch {
+    failed.value = true
+    ready.value = true
+  }
 })
 
 onBeforeUnmount(() => {
   clearInterval(clockTimer)
   clearInterval(scrambleTimer)
-  triggers.forEach((t) => t.kill())
+  clearTimeout(holdTimer)
+  clearTimeout(speechTimer)
+  clearTimeout(scanTimer)
+  clearTimeout(greetTimer)
+  flight?.kill()
+  removeEventListener('keydown', onKey)
   exp?.dispose()
   document.documentElement.classList.remove('is-locked')
 })
 </script>
 
 <template>
-  <div ref="root" class="site" :class="{ 'is-booted': booted, 'is-lite': lite }">
+  <div ref="root" class="site" :class="[`is-${stage}`, { 'is-booted': stage !== 'boot', 'is-lite': lite, 'is-solid': solidSeen }]">
     <canvas ref="canvas" class="stage" aria-hidden="true" />
-    <div class="scrim" aria-hidden="true" />
     <div class="scanlines" aria-hidden="true" />
 
-    <BootScreen v-if="!booted" :ready="ready" :failed="failed" @enter="enter" />
+    <BootScreen v-if="stage === 'boot'" :ready="ready" :failed="failed" @enter="enter" />
 
     <!-- HUD: her optic overlay is the site's interface. -->
     <header class="hud hud--top">
       <div class="hud__id">
-        <strong>MANDA EXPRESS</strong>
+        <strong>RINA MANDA</strong>
         <span>DISTRICT 7 / UNIT RM-01</span>
       </div>
       <div class="hud__tools">
         <span class="hud__stat"><i class="beat" />{{ BPM }} BPM</span>
         <span class="hud__stat hud__stat--clock">LOCAL {{ clock }}</span>
+        <button v-if="stage === 'landed'" id="replay" class="chip" type="button" @click="replay">Replay<span class="hide-sm"> flight</span></button>
         <button id="toggle-sound" class="chip" type="button" :aria-pressed="sound" @click="toggleSound">
           Sound {{ sound ? 'on' : 'off' }}
         </button>
@@ -184,69 +347,60 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <nav class="route" aria-label="Chapters">
-      <div class="route__bar"><i /></div>
-      <ol>
-        <li v-for="id in CHAPTERS" :key="id" :class="{ 'is-on': id === chapter }">
-          <button type="button" @click="goTo(id)">{{ WAYPOINTS[id] }}</button>
-        </li>
-      </ol>
-    </nav>
-
     <footer class="hud hud--bottom">
-      <p class="hud__chapter"><span>{{ chapterNumber }}</span>{{ label }}</p>
-      <p class="hud__route">ROUTE {{ String(route).padStart(3, '0') }}%</p>
+      <p class="hud__chapter"><span>{{ stageNumber }}</span>{{ label }}</p>
+      <button v-if="stage === 'flight'" id="skip" class="btn" type="button" @click="skip">Skip flight</button>
     </footer>
 
-    <main>
-      <section :ref="(el) => (sections.run = el as HTMLElement)" class="chapter chapter--run">
-        <div class="pin">
-          <div class="caption caption--hero" data-ch="run" data-from="0" data-to="0.1">
-            <p class="mono">MANDA EXPRESS / DISTRICT 7 / 02:14</p>
-            <h1>Rina Manda</h1>
-            <p class="lede">Cyborg street courier. One delivery left tonight, and it has your name on it.</p>
-            <p class="mono hint">Scroll to start the run</p>
-          </div>
-          <div class="caption caption--left" data-ch="run" data-from="0.15" data-to="0.33">
-            <p class="mono">PICKUP CONFIRMED / RAIN / 2.4 KM TO DROP</p>
-            <h2>The run</h2>
-            <p>She takes the roofs. You take the street.</p>
-          </div>
-          <div class="caption caption--right" data-ch="run" data-from="0.44" data-to="0.64">
-            <p class="mono">STREET LEVEL</p>
-            <h2>District 7 never closes</h2>
-            <p>Noodle bars, chrome clinics and pawn shops, all of it lit and all of it wet.</p>
-          </div>
-          <div class="caption caption--left" data-ch="run" data-from="0.78" data-to="0.97">
-            <p class="mono">ROOFTOP AHEAD / SIGNAL LOCK</p>
-            <h2>She is already there</h2>
-          </div>
+    <main class="overlay">
+      <!-- The flight: captions keyed to how far along it is. -->
+      <div class="caption caption--left" data-from="0.16" data-to="0.33">
+        <p class="mono">SIGNAL RM-01 / RAIN / 2.4 KM</p>
+        <h2>District 7 never closes</h2>
+      </div>
+      <div class="caption caption--right" data-from="0.46" data-to="0.64">
+        <p class="mono">STREET LEVEL</p>
+        <h2>Lit, loud and wet</h2>
+      </div>
+      <div class="caption caption--left" data-from="0.78" data-to="0.97">
+        <p class="mono">ROOFTOP AHEAD / SIGNAL LOCK</p>
+        <h2>She is already there</h2>
+      </div>
+
+      <!-- Landed: brackets and a label around her show she can be clicked. -->
+      <div v-if="stage === 'landed'" class="lock" :class="{ 'is-over': hover }">
+        <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
+        <button id="connect" class="lock__label" type="button" @click="connect">
+          <span>RM-01 / RINA MANDA</span>
+          <strong>{{ touch ? 'Tap to connect' : 'Click to connect' }}</strong>
+        </button>
+      </div>
+      <i v-if="pulse" :key="pulse" class="pulse" aria-hidden="true" />
+
+      <!-- Her scan: labels on her optic, chrome arm, ink and knees, pinned to the model. -->
+      <div class="scan" :class="{ 'is-on': showScan }" aria-hidden="true">
+        <div v-for="c in CALLOUTS" :key="c.id" class="callout" :class="`callout--${c.side}`" :style="{ left: `var(--${c.id}-x)`, top: `var(--${c.id}-y)` }">
+          <i class="callout__dot" /><i class="callout__line" />
+          <p class="callout__text"><strong>{{ c.title }}</strong><span>{{ c.note }}</span></p>
         </div>
-      </section>
+      </div>
 
-      <section :ref="(el) => (sections.rina = el as HTMLElement)" class="chapter chapter--rina">
-        <div class="pin">
-          <div class="caption caption--left caption--dossier" data-ch="rina" data-from="0.04" data-to="0.72">
-            <p class="mono">COURIER FILE / RM-01</p>
-            <h2>Rina Manda</h2>
-            <dl>
-              <div><dt>Role</dt><dd>Street courier, mid-20s</dd></div>
-              <div><dt>Optics</dt><dd>Ice-blue right eye, cybernetic left</dd></div>
-              <div><dt>Chrome</dt><dd>Right arm, both knees</dd></div>
-              <div><dt>Marks</dt><dd>Sakura circuit tattoo, hip barcode, three scars</dd></div>
-            </dl>
-            <p class="mono hint">Point at her. Tap on a phone.</p>
-          </div>
+      <!-- What she says, over her head. -->
+      <p v-if="speech && (stage === 'landed' || stage === 'linked')" :key="speechKey" class="speech" role="status" @animationend="speech = ''">{{ speech }}</p>
+
+      <!-- Reactions: once she is solid, the dock (or keys 1 to 5, or clicking her) plays one. -->
+      <div v-if="stage === 'landed' || (stage === 'linked' && solidSeen)" class="dock">
+        <p class="mono dock__hint">{{ solidSeen ? (touch ? 'Tap her, or pick one' : 'Click her or press 1 to 5 for a move, or open her file. Drag to spin around her') : (touch ? 'Drag to spin around her, pinch to zoom' : 'Drag to spin around her, scroll to zoom') }}</p>
+        <div v-if="solidSeen" class="dock__row">
+          <button v-for="r in REACTIONS" :key="r.id" class="chip dock__btn" type="button" @click="react(r.id)">
+            <kbd v-if="!touch">{{ r.key }}</kbd>{{ r.label }}
+          </button>
+          <i class="dock__sep" aria-hidden="true" />
+          <button v-for="f in FILE_BUTTONS" :key="f.id" class="chip dock__btn dock__btn--file" type="button" :aria-pressed="stage === 'linked' && section === f.id" @click="openSection(f.id)">{{ f.label }}</button>
         </div>
-      </section>
+      </div>
 
-      <section :ref="(el) => (sections.ware = el as HTMLElement)" class="chapter chapter--ware">
-        <CyberwarePanel />
-      </section>
-
-      <section :ref="(el) => (sections.delivered = el as HTMLElement)" class="chapter chapter--delivered">
-        <DeliveryReceipt :clock="clock" :signed="signed" @sign="signed = true" />
-      </section>
+      <RinaPanels v-model:section="section" :open="stage === 'linked'" @close="closeFile" @focus="focus" />
     </main>
   </div>
 </template>

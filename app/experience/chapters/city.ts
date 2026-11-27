@@ -18,15 +18,23 @@ import {
   PlaneGeometry,
   ShaderMaterial,
   SphereGeometry,
+  SRGBColorSpace,
+  TextureLoader,
+  MirroredRepeatWrapping,
   Vector3,
 } from 'three'
-import type { CanvasTexture, PerspectiveCamera } from 'three'
+import type { CanvasTexture, Object3D, PerspectiveCamera } from 'three'
 import { Reflector } from 'three/examples/jsm/objects/Reflector.js'
 import { HEX, col, lerp, rng, smooth } from '../palette'
 import type { Frame } from '../types'
 import { cityUniforms, common } from './city/glsl'
-import { adverts, horizontalSigns, ticker, verticalSigns } from './city/signs'
+import { horizontalSigns, ticker, verticalSigns } from './city/signs'
 import { Traffic } from './city/traffic'
+import { StreetLife } from './city/street'
+import { FacadeKit } from './city/kit'
+import type { Facade, RoofSpot } from './city/kit'
+import { TowerModels } from './city/towers'
+import type { TowerLot } from './city/towers'
 
 /** Half width of the street, pavements included. The road itself is ROAD wide each side. */
 const STREET = 13
@@ -60,12 +68,24 @@ export class CityChapter {
   private readonly mirror: Reflector
   private readonly flatGround: Mesh
   private readonly traffic: Traffic
+  private readonly street: StreetLife
   private readonly tickers: { tex: CanvasTexture; mesh: Mesh }[] = []
   private readonly beams: Mesh[] = []
   private readonly adMats: ShaderMaterial[] = []
+  /** Street walls and roofs, kept for the Blender facade kit, which loads later. */
+  private readonly facades: Facade[] = []
+  private readonly roofSpots: RoofSpot[] = []
+  private kit?: FacadeKit
+  /** Street lots that get a Blender tower, and the instanced boxes standing in for them. */
+  private readonly lots: TowerLot[] = []
+  private towerMesh!: InstancedMesh
+  private towerMat!: ShaderMaterial
+  private towers?: TowerModels
+  private lite = false
 
   constructor() {
     const rand = rng(1337)
+    const pickModel = rng(4242)
     const boxes: Box[] = []
     const lights: Light[] = []
     const halos: Halo[] = []
@@ -79,12 +99,22 @@ export class CityChapter {
       halos.push({ x, y, z, size, color: color.clone().multiplyScalar(gain) })
 
     /** A tower in up to three tiers, each set back from the one below, with clutter on top. */
-    const tower = (x: number, z: number, w: number, d: number, h: number, street: boolean) => {
+    const tower = (x: number, z: number, w: number, d: number, h: number, street: boolean, row2 = false, mega = false) => {
       const seed = rand()
       let top = 0
+      const side = Math.sign(x)
+      // Most street lots and about half the second row get a Blender tower (towers.ts) in place of these boxes. The
+      // boxes are still built, as the fallback, but without the clutter the model replaces.
+      // The pick uses its own random stream, so the rest of the city is laid out as before.
+      const modelled = mega || ((street || row2) && pickModel() < (street ? 0.85 : 0.55))
+      const first = boxes.length
+      const wall = (bw: number, bd: number, y0: number, y1: number) =>
+        street && !modelled && this.facades.push({ x: x - side * bw / 2, side, z0: z - bd / 2, z1: z + bd / 2, y0, y1 })
       if (street) {
         const podium = lerp(12, 22, rand())
         box(x, podium / 2, z, w, podium, d, 1, seed)
+        // Clutter starts above the shop signs.
+        wall(w, d, 8, podium)
         top = podium
       }
       const tiers = h > 90 ? 3 : h > 45 ? 2 : 1
@@ -93,20 +123,26 @@ export class CityChapter {
       for (let t = 0; t < tiers; t++) {
         const th = ((h - top) / (tiers - t)) * (t === tiers - 1 ? 1 : lerp(0.7, 1.1, rand()))
         box(x, top + th / 2, z, tw, th, td, 0, seed + t * 0.013)
+        wall(tw, td, top + 0.5, top + th)
         top += th
         tw *= lerp(0.62, 0.86, rand())
         td *= lerp(0.62, 0.86, rand())
       }
+      if (modelled) this.lots.push({ x, z, w, d, h: top, side, seed, boxes: [first, boxes.length], mega })
       // Roof clutter: plant rooms, tanks, a mast with a warning light.
       for (let k = 0; k < 3; k++) {
         const s = lerp(2.5, 6, rand())
-        box(x + (rand() - 0.5) * tw * 0.8, top + s / 2, z + (rand() - 0.5) * td * 0.8, s * 1.4, s, s, 2)
+        const bx = x + (rand() - 0.5) * tw * 0.8
+        const bz = z + (rand() - 0.5) * td * 0.8
+        if (!modelled) box(bx, top + s / 2, bz, s * 1.4, s, s, 2)
       }
       if (h > 110 || rand() > 0.7) {
         const mast = lerp(12, 46, rand())
-        box(x, top + mast / 2, z, 0.7, mast, 0.7, 2)
-        light(x, top + mast, z, 1.3, 1.3, 1.3, col(0xff2030), 4)
-        halo(x, top + mast, z, 16, col(0xff2030), 0.5)
+        if (!modelled) {
+          box(x, top + mast / 2, z, 0.7, mast, 0.7, 2)
+          light(x, top + mast, z, 1.3, 1.3, 1.3, col(0xff2030), 4)
+          halo(x, top + mast, z, 16, col(0xff2030), 0.5)
+        }
       }
       return top
     }
@@ -119,10 +155,12 @@ export class CityChapter {
         const w = lerp(24, 38, rand())
         const h = lerp(34, 130, rand() * rand())
         const cz = z - d / 2
+        const lotsBefore = this.lots.length
         const top = tower(side * (STREET + w / 2), cz, w, d, h, true)
         roofs.push({ x: side * (STREET + w / 2), top, z: cz, side })
+        if (this.lots.length === lotsBefore) this.roofSpots.push({ x: side * (STREET + w / 2), top, z: cz })
         const w2 = lerp(34, 54, rand())
-        tower(side * (STREET + 44 + w2 / 2), cz, w2, d + 8, lerp(110, 290, rand()), false)
+        tower(side * (STREET + 44 + w2 / 2), cz, w2, d + 8, lerp(110, 290, rand()), false, true)
 
         // Shopfront light spilling onto the pavement.
         for (let s = z - 4; s > z - d + 2; s -= 9) halo(side * (STREET - 0.5), 3.4, s, 15, pick(), 0.2)
@@ -159,17 +197,36 @@ export class CityChapter {
       const side = i % 2 ? 1 : -1
       const x = i < 10 ? lerp(-330, 330, rand()) : side * lerp(150, 420, rand())
       const z = i < 10 ? ROOF.z - lerp(90, 330, rand()) : lerp(60, ROOF.z, rand())
-      tower(x, z, w, w, h, false)
+      tower(x, z, w, w, h, false, false, true)
       megas.push({ x, z, w, h })
     }
 
+    // The rest of the city, out to the skyline painting: a grid of plain blocks so the ground
+    // never shows from the opening shot high above. Its own random stream keeps the street as it was.
+    const outer = rng(9090)
+    for (let gx = -1300; gx <= 1300; gx += 58) {
+      for (let gz = 260; gz >= -1700; gz -= 58) {
+        const x = gx + (outer() - 0.5) * 24
+        const z = gz + (outer() - 0.5) * 24
+        const w = lerp(26, 46, outer())
+        const d = lerp(26, 46, outer())
+        const h = lerp(30, 150, outer() * outer()) * (1 + Math.max(0, 1 - Math.hypot(x, z + 450) / 900))
+        const seed = outer()
+        if (Math.abs(x) < 140 && z > ROOF.z - 60 && z < 120) continue
+        if (megas.some((m) => Math.abs(m.x - x) < m.w * 0.5 + 30 && Math.abs(m.z - z) < m.w * 0.5 + 30)) continue
+        box(x, h / 2, z, w, h, d, 0, seed)
+      }
+    }
+
     // Street lamps.
+    const lampHeads: { x: number; y: number; z: number }[] = []
     for (let z = START_Z - 10; z > ROOF.z + 40; z -= 30) {
       for (const side of [-1, 1]) {
         const x = side * (ROAD + 0.9)
         box(x, 5.5, z, 0.3, 11, 0.3, 2)
         box(x - side * 1.4, 10.9, z, 3, 0.25, 0.3, 2)
         light(x - side * 2.6, 10.7, z, 1.2, 0.16, 0.5, col(0xffe2b0), 2.2)
+        lampHeads.push({ x: x - side * 2.6, y: 10.6, z })
         halo(x - side * 2.6, 10.2, z, 18, col(0xffc070), 0.3)
       }
     }
@@ -193,7 +250,9 @@ export class CityChapter {
     for (let z = START_Z - 30; z > ROOF.z + 60; z -= lerp(16, 40, rand())) box(0, lerp(30, 64, rand()), z, STREET * 2, 0.09, 0.09, 2)
 
     this.group.add(this.buildSky())
-    this.group.add(this.buildTowers(boxes))
+    for (const [y, gain] of [[28, 0.5], [95, 0.35], [190, 0.22]] as const) this.group.add(this.buildHaze(y, gain))
+    this.towerMesh = this.buildTowers(boxes)
+    this.group.add(this.towerMesh)
 
     // ---- Signs ----
     const vTex = verticalSigns()
@@ -233,37 +292,86 @@ export class CityChapter {
       this.group.add(sign)
     }
 
-    // ---- Billboards ----
-    const ads = adverts()
+    // ---- Holograms ----
+    // Where the city used to hang text adverts, translucent holo screens now play abstract
+    // motion graphics: a pulsing eye of rings, falling glyph columns, a beat-driven waveform
+    // and a turning lattice. No brand text, and they glow through the rain like projections.
     const adGeo = new PlaneGeometry(1, 1)
-    const billboard = (x: number, y: number, z: number, w: number, turn: number, i: number) => {
+    const billboard = (x: number, y: number, z: number, w: number, turn: number, i: number, aspect = 0.5625, seed = rand()) => {
       const mat = new ShaderMaterial({
-        uniforms: { ...cityUniforms, uMap: { value: ads[i % ads.length] }, uSeed: { value: rand() * 20 } },
+        uniforms: {
+          ...cityUniforms,
+          uSeed: { value: seed * 20 },
+          uType: { value: Math.floor(i) % 4 },
+          uColor: { value: PALETTE[Math.floor(i) % 2]!.clone() },
+          uAlt: { value: PALETTE[(Math.floor(i) + 1) % 2]!.clone() },
+        },
+        transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending,
         vertexShader: /* glsl */ `
           varying vec2 vUv; varying vec3 vWorld;
           void main() { vUv = uv; vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }
         `,
         fragmentShader: /* glsl */ `
-          varying vec2 vUv; varying vec3 vWorld; uniform sampler2D uMap; uniform float uSeed;
+          varying vec2 vUv; varying vec3 vWorld; uniform float uSeed; uniform float uType; uniform vec3 uColor; uniform vec3 uAlt;
           ${common}
           void main() {
             vec2 uv = vUv;
-            // Now and then a slice of the picture tears sideways.
-            float t = floor(uTime * 7.0 + uSeed);
-            float tear = step(0.93, hash(vec2(t, floor(uv.y * 14.0)))) * step(0.6, hash(vec2(t, uSeed)));
-            uv.x += tear * 0.06;
-            vec3 c = vec3(texture2D(uMap, uv + vec2(0.004, 0.0)).r, texture2D(uMap, uv).g, texture2D(uMap, uv - vec2(0.004, 0.0)).b);
-            c *= 0.82 + 0.18 * sin(uv.y * 420.0);
-            c *= 0.9 + 0.1 * sin(uTime * 30.0 + uSeed) * step(0.8, hash(vec2(t * 0.1, uSeed)));
-            float frame = step(0.012, uv.x) * step(uv.x, 0.988) * step(0.02, uv.y) * step(uv.y, 0.98);
-            c = mix(vec3(0.01), c * (2.3 + uBeat * 0.4), frame);
-            gl_FragColor = vec4(applyFog(c, vWorld), 1.0);
+            float t = uTime + uSeed;
+            // Glitch: now and then a slice tears sideways.
+            float gt = floor(t * 6.0);
+            uv.x += step(0.94, hash(vec2(gt, floor(uv.y * 18.0)))) * 0.05 * step(0.5, hash(vec2(gt, uSeed)));
+            vec2 p = (uv - 0.5) * vec2(1.78, 1.0);
+            float v = 0.0;
+            vec3 col = uColor;
+            if (uType < 0.5) {
+              // An eye of rings, the pupil beating with the music.
+              float r = length(p);
+              v = smoothstep(0.03, 0.0, abs(fract(r * 7.0 - t * 0.6) - 0.5) - 0.18) * smoothstep(0.5, 0.1, r);
+              v += smoothstep(0.12 + uBeat * 0.05, 0.08, r) * 1.5;
+              float a = atan(p.y, p.x);
+              v += step(0.92, fract(a * 6.0 / 6.2832 + t * 0.1)) * smoothstep(0.42, 0.3, r) * step(0.2, r);
+              col = mix(uColor, uAlt, smoothstep(0.1, 0.4, r));
+            } else if (uType < 1.5) {
+              // Columns of falling glyphs.
+              vec2 g = vec2(uv.x * 22.0, uv.y * 12.0);
+              vec2 id = floor(g);
+              float speed = 1.0 + hash(vec2(id.x, uSeed)) * 3.0;
+              float row = floor(g.y + t * speed);
+              float glyph = step(0.45, hash(vec2(id.x, row) + floor(fract(g) * 3.0) * 0.37));
+              float head = fract(-(g.y + t * speed) * 0.08 + hash(vec2(id.x, 3.0)));
+              v = glyph * step(0.15, fract(g.x)) * step(0.15, fract(g.y)) * pow(head, 3.0) * 1.6;
+              col = mix(uColor, vec3(1.0), pow(head, 12.0));
+            } else if (uType < 2.5) {
+              // A waveform that jumps with the beat.
+              float bars = floor(uv.x * 48.0);
+              float h = 0.15 + 0.6 * vnoise(vec2(bars * 0.35, t * 2.0)) * (0.7 + uBeat * 1.4);
+              v = step(abs(uv.y - 0.5) * 2.0, h) * step(0.2, fract(uv.x * 48.0));
+              v *= 0.6 + 0.4 * step(0.5, fract(uv.y * 30.0));
+              col = mix(uColor, uAlt, abs(uv.y - 0.5) * 2.0);
+            } else {
+              // A turning lattice.
+              float a = t * 0.3;
+              vec2 q = mat2(cos(a), -sin(a), sin(a), cos(a)) * p * 6.0;
+              vec2 f = abs(fract(q) - 0.5);
+              v = smoothstep(0.06, 0.0, min(f.x, f.y)) * smoothstep(0.55, 0.2, length(p));
+              v += smoothstep(0.02, 0.0, abs(length(p) - 0.42)) * 1.2;
+            }
+            // Scanlines, a frame, flicker, and a fade at the edges like a projection.
+            v *= 0.75 + 0.25 * sin(uv.y * 380.0 + t * 8.0);
+            float edge = smoothstep(0.0, 0.04, uv.x) * smoothstep(1.0, 0.96, uv.x) * smoothstep(0.0, 0.05, uv.y) * smoothstep(1.0, 0.95, uv.y);
+            float frame = (1.0 - step(0.008, uv.x) * step(uv.x, 0.992) * step(0.014, uv.y) * step(uv.y, 0.986));
+            float flick = 0.85 + 0.15 * step(0.5, hash(vec2(floor(t * 14.0), uSeed)));
+            vec3 c = col * (v * edge + frame * 0.8 + 0.05 * edge) * flick * (2.0 + uBeat * 0.6);
+            // Fog eats far holograms instead of greying them.
+            float d = distance(vWorld, cameraPosition);
+            c *= exp(-d * 0.0016);
+            gl_FragColor = vec4(c, 1.0);
           }
         `,
       })
       this.adMats.push(mat)
       const board = new Mesh(adGeo, mat)
-      board.scale.set(w, w * 0.5625, 1)
+      board.scale.set(w, w * aspect, 1)
       board.position.set(x, y, z)
       board.rotation.y = turn
       this.group.add(board)
@@ -273,14 +381,26 @@ export class CityChapter {
     roofs.forEach((r, i) => {
       if (i % 3 !== 0 || r.z > 40) return
       const w = lerp(20, 30, rand())
-      // On the roof, turned to face the street and the oncoming camera.
-      billboard(r.x - r.side * 4, r.top + w * 0.28 + 3, r.z, w, -r.side * 0.55, i)
+      // On the roof, turned to face the street and the oncoming camera. i / 3 so the roof
+      // boards cycle through every advert, not just the two that every third index lands on.
+      billboard(r.x - r.side * 4, r.top + w * 0.28 + 3, r.z, w, -r.side * 0.55, i / 3)
       box(r.x - r.side * 4, r.top + 1.5, r.z - 0.6, 0.6, 3, 0.6, 2)
     })
     megas.slice(0, 14).forEach((m, i) => {
       const w = m.w * 0.9
       billboard(m.x, m.h * lerp(0.4, 0.62, rand()), m.z + m.w / 2 + 1.2, w, 0, i + 1)
     })
+
+    // Tall holo screens hanging off the walls over the pavement, layered down the canyon
+    // the way the big night-city streets stack their projections. Own random stream.
+    const holo = rng(5150)
+    for (let z = START_Z - 40; z > ROOF.z + 70; z -= lerp(18, 34, holo())) {
+      const side = holo() > 0.5 ? 1 : -1
+      const w = lerp(4.2, 6.4, holo())
+      const tall = lerp(2.4, 4.6, holo())
+      const y = lerp(22, 62, holo())
+      billboard(side * (STREET - w / 2 - 0.3), y, z, w, 0, Math.floor(holo() * 4), tall, holo())
+    }
 
     // Hologram rings turning around the tallest towers.
     megas.slice(0, 7).forEach((m, i) => {
@@ -307,7 +427,7 @@ export class CityChapter {
           vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
           fragmentShader: /* glsl */ `
             varying vec2 vUv; uniform vec3 uColor;
-            void main() { float a = pow(1.0 - abs(vUv.x - 0.5) * 2.0, 2.0) * pow(1.0 - vUv.y, 1.5); gl_FragColor = vec4(uColor * a, a); }
+            void main() { float a = pow(max(1.0 - abs(vUv.x - 0.5) * 2.0, 0.0), 2.0) * pow(max(1.0 - vUv.y, 0.0), 1.5); gl_FragColor = vec4(uColor * a, a); }
           `,
         }),
       )
@@ -330,6 +450,9 @@ export class CityChapter {
 
     this.traffic = new Traffic(ROOF.z + 40, START_Z)
     this.group.add(this.traffic.group)
+    this.street = new StreetLife({ inner: ROAD + 0.8, outer: STREET - 1.8, top: 0.4, zMin: ROOF.z + 30, zMax: START_Z }, 1100)
+    this.street.lampBeams(lampHeads, col(0xffc070))
+    this.group.add(this.street.group)
 
     // ---- Glow sprites ----
     this.haloCount = halos.length
@@ -410,6 +533,40 @@ export class CityChapter {
     this.group.add(this.rainMesh)
   }
 
+  /**
+   * A layer of lit smog: a huge sheet of drifting noise, tinted by the district below.
+   * Seen from above it is the purple haze between the towers; it fades out as the camera
+   * passes through it, so its flat edge never shows.
+   */
+  private buildHaze(y: number, gain: number) {
+    const sheet = new Mesh(
+      new PlaneGeometry(3600, 3600, 1, 1),
+      new ShaderMaterial({
+        uniforms: { ...cityUniforms, uY: { value: y }, uGain: { value: gain } },
+        transparent: true, depthWrite: false, side: DoubleSide, blending: AdditiveBlending,
+        vertexShader: /* glsl */ `varying vec3 vWorld; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vWorld = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+        fragmentShader: /* glsl */ `
+          varying vec3 vWorld; uniform float uY; uniform float uGain;
+          ${common}
+          void main() {
+            vec2 q = vWorld.xz * 0.004;
+            float n = vnoise(q + vec2(uTime * 0.012, uTime * 0.007)) * 0.6 + vnoise(q * 2.7 - uTime * 0.02) * 0.3 + vnoise(q * 7.0 + uTime * 0.03) * 0.1;
+            n = smoothstep(0.35, 0.85, n);
+            vec3 tint = mix(uPink, uCyan, vnoise(vWorld.xz * 0.0015 + 3.0)) * 0.6 + zoneColor(vWorld.z) * 0.4;
+            float near = smoothstep(6.0, 40.0, abs(cameraPosition.y - uY));
+            float far = 1.0 - smoothstep(900.0, 1700.0, distance(vWorld.xz, cameraPosition.xz));
+            gl_FragColor = vec4(tint * n * uGain * near * far * (0.8 + uBeat * 0.2), 1.0);
+          }
+        `,
+      }),
+    )
+    sheet.rotation.x = -Math.PI / 2
+    sheet.position.set(0, y, -450)
+    sheet.renderOrder = 2
+    sheet.frustumCulled = false
+    return sheet
+  }
+
   private buildSky() {
     const sky = new Mesh(
       new SphereGeometry(1700, 32, 16),
@@ -442,7 +599,7 @@ export class CityChapter {
   private buildTowers(boxes: Box[]) {
     const geo = new BoxGeometry(1, 1, 1)
     const info = new Float32Array(boxes.length * 2)
-    const material = new ShaderMaterial({
+    const material = (this.towerMat = new ShaderMaterial({
       uniforms: cityUniforms,
       vertexShader: /* glsl */ `
         attribute vec2 aInfo;
@@ -461,7 +618,9 @@ export class CityChapter {
         varying vec3 vLocal; varying vec3 vNormal; varying vec3 vWorld; varying vec3 vSize; varying vec2 vInfo;
         ${common}
         void main() {
-          float seed = vInfo.x; float kind = vInfo.y;
+          // Snap the per-tower values back to exact numbers: interpolation leaves tiny errors that
+          // hash() blows up into per-pixel static on the windows and shopfronts.
+          float seed = floor(vInfo.x * 4096.0 + 0.5) / 4096.0; float kind = floor(vInfo.y + 0.5);
           vec3 n = normalize(vNormal);
           vec3 V = normalize(cameraPosition - vWorld);
           float s1 = hash(vec2(seed, 1.0)), s2 = hash(vec2(seed, 2.0)), s3 = hash(vec2(seed, 3.0)), s4 = hash(vec2(seed, 4.0));
@@ -542,7 +701,7 @@ export class CityChapter {
           gl_FragColor = vec4(applyFog(c, vWorld), 1.0);
         }
       `,
-    })
+    }))
     const mesh = new InstancedMesh(geo, material, boxes.length)
     const m = new Matrix4()
     boxes.forEach((b, i) => {
@@ -568,7 +727,72 @@ export class CityChapter {
     return mesh
   }
 
+  /**
+   * Puts the Blender towers (public/models/towers.glb) on their street lots and hides the
+   * boxes that stood in for them.
+   */
+  build(models: Object3D) {
+    this.towers = new TowerModels(models, this.lots, this.towerMat)
+    this.group.add(this.towers.group)
+    const zero = new Matrix4().makeScale(0, 0, 0)
+    for (const lot of this.lots) for (let i = lot.boxes[0]; i < lot.boxes[1]; i++) this.towerMesh.setMatrixAt(i, zero)
+    this.towerMesh.instanceMatrix.needsUpdate = true
+  }
+
+  /**
+   * The far skyline: a Higgsfield matte painting of the megacity (public/img/skyline.webp),
+   * wrapped four times round a cylinder well beyond the towers. Its black sky adds nothing,
+   * so only the lit city shows, and it sinks into the glowing fog at the horizon.
+   */
+  /** Loads the skyline painting; resolves once it is in the scene, or failed to load. */
+  loadSkyline(lite: boolean): Promise<void> {
+    return new Promise((done) => new TextureLoader().load(`img/skyline${lite ? '-lite' : ''}.webp`, (tex) => {
+      tex.colorSpace = SRGBColorSpace
+      tex.wrapS = MirroredRepeatWrapping
+      tex.repeat.set(4, 1)
+      tex.anisotropy = 4
+      const radius = 1560
+      const height = (Math.PI * 2 * radius) / 4 / (2688 / 1152)
+      const geo = new CylinderGeometry(radius, radius, height, 96, 1, true)
+      const band = new Mesh(
+        geo,
+        new ShaderMaterial({
+          uniforms: { ...cityUniforms, uMap: { value: tex } },
+          side: BackSide, transparent: true, depthWrite: false, blending: AdditiveBlending,
+          vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+          fragmentShader: /* glsl */ `
+            varying vec2 vUv; uniform sampler2D uMap;
+            ${common}
+            void main() {
+              vec2 uv = vec2(vUv.x * 4.0, vUv.y);
+              vec3 c = texture2D(uMap, uv).rgb;
+              // Sink the base into the horizon haze, and breathe a little with the music.
+              float base = smoothstep(0.02, 0.3, vUv.y);
+              c = c * base * (0.75 + uBeat * 0.12) + uFog * (1.0 - base) * 0.6;
+              gl_FragColor = vec4(c, 1.0);
+            }
+          `,
+        }),
+      )
+      band.position.set(0, height / 2 - 70, -450)
+      band.renderOrder = -9
+      band.frustumCulled = false
+      this.group.add(band)
+      done()
+    }, undefined, () => done()))
+  }
+
+  /** Hangs the Blender facade kit (public/models/city-kit.glb) on the street walls. */
+  dress(kit: Object3D) {
+    this.kit = new FacadeKit(kit, this.facades, this.roofSpots)
+    this.kit.setLite(this.lite)
+    this.group.add(this.kit.group)
+  }
+
   setLite(lite: boolean) {
+    this.lite = lite
+    this.kit?.setLite(lite)
+    this.street?.setLite(lite)
     this.rainMesh.geometry.setDrawRange(0, lite ? 1600 : Infinity)
     // Lite drops the real reflection (a second render of the city) and half the glow.
     this.mirror.visible = !lite
@@ -580,8 +804,8 @@ export class CityChapter {
   pose(p: number, camera: PerspectiveCamera, target: Vector3) {
     const at = (q: number, out: Vector3) => {
       const y = track(q, [
-        [0, 150],
-        [0.1, 140],
+        [0, 330],
+        [0.1, 270],
         [0.36, 15],
         [0.7, 11.5],
         [0.88, 44],

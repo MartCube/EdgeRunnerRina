@@ -1,11 +1,27 @@
-/** Scroll progress of each chapter, 0 to 1, written by the page and read by the scenes. */
+/** Where the visitor is in the experience, 0 to 1 each. Written by the page, read by the scenes. */
 export interface Progress {
+  /** The flight through the city, from the skyline to her roof. */
   run: number
+  /** The landing in front of Rina; the scan sweep prints her as it goes. */
   rina: number
-  /** How far the cyberware panel has scrolled in. */
-  ware: number
-  /** How far the delivery receipt has scrolled in. */
-  delivered: number
+}
+
+/** The camera around Rina once it has landed. The page tweens these. */
+export interface RinaView {
+  /** 0 to 1, how far her file is open. The camera steps back to make room for the panels. */
+  link: number
+  /** Radians the visitor has dragged the camera around her; any amount, all the way round. */
+  orbit: number
+  /** Radians the camera is raised above her (negative looks up at her from low down). */
+  tilt: number
+  /** Distance multiplier from the mouse wheel or a pinch: below 1 is closer. */
+  dolly: number
+  /** 0 to 1, how far the camera has moved in on one part of her. */
+  zoom: number
+  /** The part being looked at: height as a share of hers, sideways offset and distance in scene units. */
+  partY: number
+  partX: number
+  partDist: number
 }
 
 /** What every scene gets each frame. */
@@ -23,5 +39,5 @@ export interface Frame {
   progress: Progress
 }
 
-export const CHAPTERS = ['run', 'rina', 'ware', 'delivered'] as const
-export type ChapterId = (typeof CHAPTERS)[number]
+/** The steps of the visit, in order. */
+export type Stage = 'boot' | 'idle' | 'flight' | 'landed' | 'linked'

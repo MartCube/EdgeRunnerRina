@@ -1,6 +1,5 @@
 import {
   BoxGeometry,
-  CanvasTexture,
   CylinderGeometry,
   DoubleSide,
   Group,
@@ -14,8 +13,9 @@ import {
 } from 'three'
 import type { PerspectiveCamera } from 'three'
 import { HEX, col, lerp, smooth } from '../palette'
-import type { Frame } from '../types'
+import type { Frame, RinaView } from '../types'
 import { ROOF } from './city'
+import { RoofDress } from './roofdress'
 
 /** Height of the figure in scene units. */
 export const TALL = 9.4
@@ -28,15 +28,18 @@ export const TALL = 9.4
 export class RooftopChapter {
   readonly group = new Group()
   readonly focus = new Vector3(ROOF.x, ROOF.y + TALL * 0.52, ROOF.z + 18)
-  /** Placeholder roof furniture, and where a Blender rooftop set goes instead. */
+  /** Placeholder roof furniture, and where the Blender rooftop set goes instead. */
   readonly furniture = new Group()
+  /** The parts that move with the music, kept whether or not the Blender set is in. */
+  readonly fixtures = new Group()
   readonly setHolder = new Group()
   /** Where Rina's model stands; the card is her placeholder. */
   readonly figureHolder = new Group()
   readonly card: Mesh
   private readonly figure: ShaderMaterial
   private readonly beacon: MeshBasicMaterial
-  private readonly frame: MeshBasicMaterial
+  /** Pad, halo, signs, koi, drone, traffic and her lights: see roofdress.ts. */
+  readonly dress = new RoofDress()
 
   constructor(onLoad: () => void) {
     const top = ROOF.y
@@ -72,36 +75,9 @@ export class RooftopChapter {
     this.beacon = new MeshBasicMaterial({ color: col(HEX.pink, 2) })
     const lamp = new Mesh(new BoxGeometry(0.7, 0.7, 0.7), this.beacon)
     lamp.position.set(ROOF.x + 17, top + 20.3, ROOF.z + 8)
-    this.furniture.add(mast, lamp)
+    this.fixtures.add(mast, lamp)
 
-    // The neon frame behind her.
-    this.frame = new MeshBasicMaterial({ color: col(HEX.pink, 1.7) })
-    const sign = new Group()
-    for (const [x, y, w, h] of [
-      [0, 6.1, 15, 0.28],
-      [0, -6.1, 15, 0.28],
-      [-7.4, 0, 0.28, 12.4],
-      [7.4, 0, 0.28, 12.4],
-    ] as const) {
-      const bar = new Mesh(new BoxGeometry(w, h, 0.28), this.frame)
-      bar.position.set(x, y, 0)
-      sign.add(bar)
-    }
-    const label = new Mesh(
-      new PlaneGeometry(13, 3.2),
-      new MeshBasicMaterial({ map: labelTexture('MANDA EXPRESS'), transparent: true, toneMapped: false, side: DoubleSide }),
-    )
-    label.position.set(0, 4.3, 0.05)
-    sign.add(label)
-    sign.position.set(ROOF.x + 2.5, top + 9.4, ROOF.z + 11)
-    this.furniture.add(sign)
-    for (const x of [-4, 9]) {
-      const post = new Mesh(new BoxGeometry(0.35, 3.4, 0.35), flat(0x1a1a28))
-      post.position.set(ROOF.x + x, top + 1.7, ROOF.z + 11)
-      this.furniture.add(post)
-    }
-
-    this.group.add(this.furniture)
+    this.group.add(this.furniture, this.fixtures, this.dress.group)
     this.setHolder.position.set(ROOF.x, top, ROOF.z)
     this.figureHolder.position.set(ROOF.x, top, ROOF.z + 18)
     this.group.add(this.setHolder, this.figureHolder)
@@ -142,45 +118,40 @@ export class RooftopChapter {
     this.group.add(this.card)
   }
 
-  pose(p: number, ware: number, camera: PerspectiveCamera, target: Vector3, f: Frame) {
+  /**
+   * The camera in front of Rina.
+   * @param p  0 to 1, the landing: the camera closes in as it goes.
+   * @param v  What the visitor is doing: file open, dragged around her, looking at a part.
+   */
+  pose(p: number, v: RinaView, camera: PerspectiveCamera, target: Vector3, f: Frame) {
     const e = smooth(0, 0.7, p)
-    // On a wide screen she stands right of centre so the dossier text has room.
+    // A tall screen needs more distance to fit her in.
     const wide = smooth(0.9, 1.5, camera.aspect)
-    const dist = lerp(15.5, 11.5, e) * lerp(1.5, 1, wide) + ware * 16
-    camera.position.set(
-      ROOF.x + lerp(0, 2.5, e) + f.pointer.x * 1.3,
-      this.focus.y + lerp(1.4, 0.3, e) + f.pointer.y * 0.6 + ware * 9,
-      this.focus.z + dist,
+    const stand = lerp(15.5, 11.5, e) * lerp(1.5, 1, wide) + v.link * lerp(4, 1.5, wide)
+    const dist = lerp(stand * v.dolly, v.partDist, v.zoom)
+    const feetY = this.focus.y - TALL * 0.52
+    target.set(
+      this.focus.x + v.partX * v.zoom,
+      // With her file open on a phone the panels fill the lower half, so she moves up.
+      lerp(this.focus.y - v.link * (1 - wide) * 3.4, feetY + TALL * v.partY, v.zoom),
+      this.focus.z,
     )
-    target.copy(this.focus)
-    target.x -= lerp(0, 4.2, e) * wide
-    target.y += ware * 12
+    // Orbit goes all the way round her; tilt lifts the camera over her. Both fade out while
+    // the camera is moved in on one of her parts.
+    const tilt = v.tilt * (1 - v.zoom)
+    const flat = Math.cos(tilt) * dist
+    const sway = 1 - Math.min(1, Math.abs(v.tilt) * 2 + v.zoom * 0.6)
+    camera.position.set(
+      target.x + Math.sin(v.orbit) * flat + Math.cos(v.orbit) * f.pointer.x * 1.3 * sway,
+      Math.max(feetY + 0.6, target.y + Math.sin(tilt) * dist + lerp(1.4, 0.3, e) * (1 - v.zoom) + f.pointer.y * 0.6 * sway),
+      target.z + Math.cos(v.orbit) * flat - Math.sin(v.orbit) * f.pointer.x * 1.3 * sway,
+    )
   }
 
   update(p: number, f: Frame) {
     this.figure.uniforms.uScan!.value = smooth(0.06, 0.55, p)
     this.figure.uniforms.uTime!.value = f.time
     this.beacon.color.copy(col(HEX.pink, f.beatIndex % 2 ? 0.5 : 2.4))
-    this.frame.color.copy(col(HEX.pink, 1.5 + f.beat * 0.7 + f.level))
+    this.dress.update(f)
   }
-}
-
-function labelTexture(text: string): CanvasTexture {
-  const c = document.createElement('canvas')
-  c.width = 1024
-  c.height = 256
-  const g = c.getContext('2d')!
-  g.fillStyle = '#00f0ff'
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
-  // Shrink the type until the words fit the canvas, whichever font has loaded.
-  let size = 170
-  do {
-    g.font = `900 ${size}px "Big Shoulders Display", Impact, sans-serif`
-    size -= 6
-  } while (g.measureText(text).width > c.width - 60 && size > 40)
-  g.fillText(text, c.width / 2, c.height / 2 + 8)
-  const tex = new CanvasTexture(c)
-  tex.colorSpace = SRGBColorSpace
-  return tex
 }

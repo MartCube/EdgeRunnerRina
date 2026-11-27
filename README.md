@@ -1,8 +1,10 @@
 # Rina Manda
 
-A scroll-driven portfolio site built around Rina Manda, a cyborg street courier. One delivery, seen through her cyber eye.
+A portfolio site built around Rina Manda, a cyborg street courier. One delivery, seen through her cyber eye.
 
-This is the rough demo: the look and the scroll story. It opens on a generated night city, flies down to street level (where Rina runs ahead of the camera) and up to Rina's rooftop. On the roof she waits, looks around now and then, and does her heart pose when you point at her.
+The page does not scroll. A second and a half after Enter, a flight starts by itself: over a generated night city, down between the towers and up to Rina's rooftop. There she waits as a cyan hologram on a projector pad, waves when the camera arrives and follows you with her head. Pointing at her draws an outline and pins scan labels to her optic, chrome arm, ink and knees; clicking her plays her heart pose, materialises her from the feet up and opens her file: who she is, her cyberware (pick a part and the camera moves in on it) and her character sheets. Once she is solid, clicking her, the dock under her or the keys 1 to 5 play her reactions (wave, chrome arm flex, heart, look around, glitch), each with a line in a speech bubble.
+
+The plan for the richer city (Tripo models, a Blender-built scene, Higgsfield plates) is in the project's "Rina site v2" plan; this is Phase 1 of it.
 
 ## Run it
 
@@ -14,11 +16,12 @@ npm run generate   # static site in .output/public (what Netlify builds)
 
 ## How it is put together
 
-- `app/components/RinaSite.vue` is the page: the HUD, the four chapters and the scroll wiring (GSAP ScrollTrigger).
-- `app/experience/Experience.ts` owns the one WebGL canvas. The page writes scroll progress into it; it sets the camera, updates each chapter and runs the post-processing (bloom, filmic tone mapping, grain, lens fringing).
+- `app/components/RinaSite.vue` is the page: the HUD, the steps of the visit (boot, idle, flight, landed, linked) and the timeline that flies the camera (GSAP).
+- `app/components/RinaPanels.vue` is her file: the holo panels, the part list and the sheet viewer.
+- `app/experience/Experience.ts` owns the one WebGL canvas. The page writes flight progress and the view around Rina into it; it sets the camera, handles hover, click and drag on her, and runs the post-processing (bloom, filmic tone mapping, grain, lens fringing).
 - `app/experience/chapters/city.ts` builds the city from instanced boxes and shaders: tiered towers, shopfronts, a wet street with real reflections, glow sprites, signs, billboards and traffic. Its helpers are in `chapters/city/`.
-- `app/experience/chapters/rooftop.ts` is Rina's roof and her fallback 2D card. `parcel.ts` is the last chapter.
-- `app/experience/rina.ts` is the rigged Rina: rooftop animations (wait, look_around, heart_pose on hover or tap), the scan sweep over the model, and the runner in the city.
+- `app/experience/chapters/rooftop.ts` is Rina's roof, the camera in front of her, and her fallback 2D card. `chapters/roofdress.ts` dresses the roof in code: her holo pad and light column, the turning halo behind her, the vertical neon signs, parapet neon, the wet floor (rain rings and neon reflections), string lights, three holo koi, her courier drone, flying cars passing behind, and the spot lights that pick her out.
+- `app/experience/rina.ts` is the rigged Rina: her animations (wait, look_around, heart_pose), poses built in code on top of them (wave and flex: each bone is swung toward a direction in her frame), head tracking, the beat nod, the glowing optic, the pink and cyan rim light, the glitch, the hologram and its materialise sweep, the hover outline, and the swap to a high-detail model (slot `rina-hd`) when one is listed.
 - `app/experience/props.ts` loads Blender models into named slots. See `public/models/README.md` for the slots and export settings.
 - `app/experience/audio.ts` plays the track and counts beats at 123 BPM.
 - `app/experience/parked/eye.ts` is the code-built cyber eye intro, set aside for now and not loaded.

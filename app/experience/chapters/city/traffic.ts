@@ -36,6 +36,13 @@ export class Traffic {
       const lane = (i % 2 ? 1 : -1) * (34 + Math.floor(rand() * 5) * 22)
       this.list.push({ axis: 0, lane, y: 48 + Math.floor(rand() * 6) * 24 + rand() * 3, pos: zMin + rand() * (zMax - zMin), speed: dir * (45 + rand() * 50), len: 7 })
     }
+    // High lanes over the rooftops, seen from the opening shot: streams of lights crossing the city.
+    const high = rng(321)
+    for (let i = 0; i < 140; i++) {
+      const dir = i % 2 ? 1 : -1
+      const lane = (i % 2 ? 1 : -1) * (60 + Math.floor(high() * 9) * 48)
+      this.list.push({ axis: 0, lane, y: 170 + Math.floor(high() * 5) * 26 + high() * 4, pos: zMin + high() * (zMax - zMin), speed: dir * (70 + high() * 60), len: 8 })
+    }
     // Cross traffic, only where the camera is down at street level.
     for (let i = 0; i < 36; i++) {
       const dir = i % 2 ? 1 : -1
