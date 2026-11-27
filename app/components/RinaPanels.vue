@@ -10,13 +10,16 @@ export interface Part {
   x: number
   dist: number
 }
+
+/** The panels of her file, one shown at a time. */
+export type Section = 'file' | 'parts' | 'sheets'
 </script>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
-const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; focus: [part: Part | null] }>()
+const props = defineProps<{ open: boolean; section: Section }>()
+const emit = defineEmits<{ close: []; focus: [part: Part | null]; 'update:section': [section: Section] }>()
 
 // Draft copy, taken from the character bible. The one-line stories are placeholders to rewrite.
 // She faces the camera, so her right arm is on the left of the screen (negative x).
@@ -62,8 +65,6 @@ const TABS = [
   { id: 'sheets', name: 'Sheets' },
 ] as const
 
-/** On a phone only one panel shows at a time; this picks which. */
-const tab = ref<(typeof TABS)[number]['id']>('file')
 const part = ref<Part | null>(null)
 const sheet = ref(-1)
 const zoomed = ref(false)
@@ -84,17 +85,17 @@ watch(
     if (open) return
     part.value = null
     sheet.value = -1
-    tab.value = 'file'
   },
 )
 </script>
 
 <template>
-  <div class="file" :class="[{ 'is-open': open }, `tab-${tab}`]" :inert="!open">
+  <!-- One panel at a time, picked from the dock (or the tabs on a phone). -->
+  <div class="file" :class="[{ 'is-open': open }, `tab-${section}`]" :inert="!open">
     <div class="file__bar">
       <p class="mono">LINK ESTABLISHED / RM-01</p>
       <div class="file__tabs" role="tablist" aria-label="Rina's file">
-        <button v-for="t in TABS" :key="t.id" class="chip" type="button" role="tab" :aria-selected="tab === t.id" @click="tab = t.id">{{ t.name }}</button>
+        <button v-for="t in TABS" :key="t.id" class="chip" type="button" role="tab" :aria-selected="section === t.id" @click="emit('update:section', t.id)">{{ t.name }}</button>
       </div>
       <button id="close-file" class="chip" type="button" @click="emit('close')">Close</button>
     </div>

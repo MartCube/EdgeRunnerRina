@@ -6,7 +6,7 @@ import { BPM } from '../experience/audio'
 import type { Stage } from '../experience/types'
 import type { Reaction } from '../experience/rina'
 import BootScreen from './BootScreen.vue'
-import RinaPanels, { type Part } from './RinaPanels.vue'
+import RinaPanels, { type Part, type Section } from './RinaPanels.vue'
 
 /** Seconds the flight takes from the skyline to her roof, and the landing after it. */
 const FLIGHT = 10.5
@@ -94,6 +94,14 @@ function scrambleTo(text: string) {
 }
 /** Becomes true once she has been materialised; the dock of reactions shows from then on. */
 const solidSeen = ref(false)
+/** Which panel of her file is showing while it is open. */
+const section = ref<Section>('file')
+/** Her file, as buttons in the dock next to her moves. */
+const FILE_BUTTONS: { id: Section; label: string }[] = [
+  { id: 'file', label: 'Her file' },
+  { id: 'parts', label: 'Cyberware' },
+  { id: 'sheets', label: 'Sheets' },
+]
 watch(stage, (s) => {
   if (s === 'linked') solidSeen.value = true
   scrambleTo(LABELS[s].toUpperCase())
@@ -191,8 +199,8 @@ function replay() {
 }
 
 /**
- * Clicking her. The first time: the heart pose, she materialises, and her file opens around
- * her. Once she is solid, each click plays her next reaction instead.
+ * Clicking her. The first time: the heart pose and she materialises; her moves and file
+ * then show as buttons in the dock. Once she is solid, each click plays her next reaction.
  */
 function pick() {
   pulse.value++
@@ -204,24 +212,28 @@ function pick() {
     return
   }
   exp.heart()
-  say('Signal locked. Hi.')
-  openFile()
+  solidSeen.value = true
+  say('Signal locked. Pick something below.')
 }
 
-function openFile() {
-  if (stage.value !== 'landed' || !exp) return
+/** Opens one panel of her file from the dock; the same button again closes it. */
+function openSection(s: Section) {
+  if (!exp || (stage.value !== 'landed' && stage.value !== 'linked')) return
+  if (stage.value === 'linked' && section.value === s) return closeFile()
+  section.value = s
+  if (stage.value === 'linked') return
   stage.value = 'linked'
   gsap.to(exp.resetView(), { link: 1, orbit: 0, tilt: 0, dolly: 1, duration: 0.9, ease: 'power2.out' })
 }
 
-/** The label beside her: materialises her the first time, and always opens her file. */
+/** The label beside her: materialises her; her file is then in the dock. */
 function connect() {
   if (exp && !exp.rinaSolid) {
     exp.heart()
-    say('Signal locked. Hi.')
+    solidSeen.value = true
+    say('Signal locked. Pick something below.')
   }
   pulse.value++
-  openFile()
 }
 
 function closeFile() {
@@ -246,7 +258,7 @@ function focus(part: Part | null) {
 const onKey = (e: KeyboardEvent) => {
   if (e.key === 'Escape') closeFile()
   const r = REACTIONS.find((x) => x.key === e.key)
-  if (r && stage.value === 'landed' && exp?.rinaSolid) react(r.id)
+  if (r && (stage.value === 'landed' || stage.value === 'linked') && exp?.rinaSolid) react(r.id)
 }
 
 onMounted(async () => {
@@ -377,17 +389,18 @@ onBeforeUnmount(() => {
       <p v-if="speech && (stage === 'landed' || stage === 'linked')" :key="speechKey" class="speech" role="status" @animationend="speech = ''">{{ speech }}</p>
 
       <!-- Reactions: once she is solid, the dock (or keys 1 to 5, or clicking her) plays one. -->
-      <div v-if="stage === 'landed'" class="dock">
-        <p class="mono dock__hint">{{ solidSeen ? (touch ? 'Tap her, or pick one' : 'Click her, press 1 to 5, or pick one. Drag to spin around her') : (touch ? 'Drag to spin around her, pinch to zoom' : 'Drag to spin around her, scroll to zoom') }}</p>
+      <div v-if="stage === 'landed' || (stage === 'linked' && solidSeen)" class="dock">
+        <p class="mono dock__hint">{{ solidSeen ? (touch ? 'Tap her, or pick one' : 'Click her or press 1 to 5 for a move, or open her file. Drag to spin around her') : (touch ? 'Drag to spin around her, pinch to zoom' : 'Drag to spin around her, scroll to zoom') }}</p>
         <div v-if="solidSeen" class="dock__row">
           <button v-for="r in REACTIONS" :key="r.id" class="chip dock__btn" type="button" @click="react(r.id)">
             <kbd v-if="!touch">{{ r.key }}</kbd>{{ r.label }}
           </button>
-          <button class="chip dock__btn dock__btn--file" type="button" @click="openFile">Her file</button>
+          <i class="dock__sep" aria-hidden="true" />
+          <button v-for="f in FILE_BUTTONS" :key="f.id" class="chip dock__btn dock__btn--file" type="button" :aria-pressed="stage === 'linked' && section === f.id" @click="openSection(f.id)">{{ f.label }}</button>
         </div>
       </div>
 
-      <RinaPanels :open="stage === 'linked'" @close="closeFile" @focus="focus" />
+      <RinaPanels v-model:section="section" :open="stage === 'linked'" @close="closeFile" @focus="focus" />
     </main>
   </div>
 </template>
